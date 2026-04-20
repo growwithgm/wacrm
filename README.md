@@ -70,9 +70,7 @@ production deploy — is in [`docs/`](./docs/README.md).
 - [Environment variables](./docs/environment-variables.md)
 
 **Deploy**
-- [Deploy on Hostinger](./docs/deployment-hostinger.md) *(recommended)*
-- [Alternative hosts](./docs/deployment-alternatives.md) — Vercel,
-  Railway, raw VPS
+- [Deploy on Hostinger](./docs/deployment-hostinger.md)
 - [Automations cron](./docs/automations-and-cron.md)
 
 **Reference**

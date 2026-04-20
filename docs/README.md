@@ -17,18 +17,16 @@ docs walk you from a freshly forked repo to a production deploy.
 
 **Deploy**
 
-5. **[Deploy on Hostinger](./deployment-hostinger.md)** — recommended hosting
-   walkthrough (Managed Node.js Hosting).
-6. **[Alternative hosts](./deployment-alternatives.md)** — Vercel, Railway,
-   raw VPS, Docker / Kubernetes.
-7. **[Automations cron](./automations-and-cron.md)** — schedule the pending
+5. **[Deploy on Hostinger](./deployment-hostinger.md)** — Managed Node.js
+   Hosting walkthrough, the recommended way to ship the template.
+6. **[Automations cron](./automations-and-cron.md)** — schedule the pending
    executions drain so waits and delays fire.
 
 **Reference**
 
-8. **[Architecture](./architecture.md)** — stack, folder layout, request
+7. **[Architecture](./architecture.md)** — stack, folder layout, request
    lifecycle, where to change things.
-9. **[Troubleshooting](./troubleshooting.md)** — the usual suspects.
+8. **[Troubleshooting](./troubleshooting.md)** — the usual suspects.
 
 ## What you will need before starting
 

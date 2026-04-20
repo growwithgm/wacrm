@@ -44,23 +44,18 @@ const ORDER: Record<string, { order: number; section: string; description: strin
     section: 'Deploy',
     description: 'Ship WaCRM on Hostinger Managed Node.js Hosting.',
   },
-  'deployment-alternatives': {
-    order: 6,
-    section: 'Deploy',
-    description: 'Vercel, Railway, raw VPS, Docker — pick what fits.',
-  },
   'automations-and-cron': {
-    order: 7,
+    order: 6,
     section: 'Deploy',
     description: 'Schedule the drain so Wait steps resume on time.',
   },
   architecture: {
-    order: 8,
+    order: 7,
     section: 'Reference',
     description: 'Stack, folder layout, request lifecycle.',
   },
   troubleshooting: {
-    order: 9,
+    order: 8,
     section: 'Reference',
     description: 'The usual suspects when something breaks.',
   },

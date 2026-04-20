@@ -153,8 +153,3 @@ UI:
 | Change auth provider | `src/lib/supabase/{client,server}.ts` + `src/hooks/use-auth.tsx` + `middleware.ts` |
 | Add a new API route | `src/app/api/<name>/route.ts`, pattern after existing routes |
 | Tweak rate limits | `RATE_LIMITS` in `src/lib/rate-limit.ts` |
-
-## Next step
-
-- [Alternative hosts](./deployment-alternatives.md) — Vercel, Railway,
-  raw VPS.
