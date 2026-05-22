@@ -173,6 +173,110 @@ function uniqueNodeKey(base: string, existing: BuilderNode[]): string {
   return `${base}_${i}`;
 }
 
+// Short, single-line content summary used in the collapsed NodeCard
+// header — lets users scan a 10-node flow without expanding every card.
+// Returns null when there's nothing meaningful to show (start/end, or
+// a freshly-added node with no fields filled in).
+function truncate(s: string, max = 80): string {
+  const clean = s.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  return clean.slice(0, max - 1) + "…";
+}
+
+function summarizeNode(node: BuilderNode): string | null {
+  const cfg = node.config;
+  switch (node.node_type) {
+    case "start":
+    case "end":
+      return null;
+    case "send_message": {
+      const text = typeof cfg.text === "string" ? cfg.text : "";
+      return text.length > 0 ? truncate(text) : null;
+    }
+    case "send_buttons": {
+      const text = typeof cfg.text === "string" ? cfg.text : "";
+      const buttons = Array.isArray(cfg.buttons)
+        ? (cfg.buttons as Array<Record<string, unknown>>)
+        : [];
+      const titles = buttons
+        .map((b) => (typeof b.title === "string" ? b.title : ""))
+        .filter(Boolean)
+        .join(" / ");
+      if (text.length > 0) {
+        return titles ? `${truncate(text, 40)} · ${truncate(titles, 35)}` : truncate(text);
+      }
+      return titles || null;
+    }
+    case "send_list": {
+      const text = typeof cfg.text === "string" ? cfg.text : "";
+      const sections = Array.isArray(cfg.sections)
+        ? (cfg.sections as Array<Record<string, unknown>>)
+        : [];
+      const rowCount = sections.reduce<number>((sum, s) => {
+        const rows = Array.isArray(s.rows) ? s.rows : [];
+        return sum + rows.length;
+      }, 0);
+      if (text.length > 0) {
+        return rowCount > 0
+          ? `${truncate(text, 50)} · ${rowCount} option${rowCount === 1 ? "" : "s"}`
+          : truncate(text);
+      }
+      return rowCount > 0
+        ? `${rowCount} option${rowCount === 1 ? "" : "s"} across ${sections.length} section${sections.length === 1 ? "" : "s"}`
+        : null;
+    }
+    case "collect_input": {
+      const prompt = typeof cfg.prompt_text === "string" ? cfg.prompt_text : "";
+      const varKey = typeof cfg.var_key === "string" ? cfg.var_key : "";
+      if (prompt.length > 0) {
+        return varKey ? `${truncate(prompt, 50)} → vars.${varKey}` : truncate(prompt);
+      }
+      return varKey ? `→ vars.${varKey}` : null;
+    }
+    case "condition": {
+      const subjectKey =
+        typeof cfg.subject_key === "string" ? cfg.subject_key : "";
+      if (!subjectKey) return null;
+      const subject =
+        cfg.subject === "tag"
+          ? "tag"
+          : cfg.subject === "contact_field"
+            ? "field"
+            : "var";
+      const subjectStr =
+        subject === "tag" ? `has tag ${truncate(subjectKey, 24)}` : `${subject}.${subjectKey}`;
+      const op =
+        cfg.operator === "equals"
+          ? "=="
+          : cfg.operator === "contains"
+            ? "contains"
+            : cfg.operator === "present"
+              ? "exists"
+              : cfg.operator === "absent"
+                ? "missing"
+                : "";
+      const value = typeof cfg.value === "string" ? cfg.value : "";
+      const valStr =
+        (cfg.operator === "equals" || cfg.operator === "contains") && value
+          ? ` "${truncate(value, 20)}"`
+          : "";
+      return subject === "tag" ? subjectStr : `${subjectStr} ${op}${valStr}`;
+    }
+    case "set_tag": {
+      const mode = cfg.mode === "remove" ? "Remove" : "Add";
+      const tagId = typeof cfg.tag_id === "string" ? cfg.tag_id : "";
+      // No tag name available without an async lookup here; show a
+      // short prefix of the UUID so users can disambiguate between
+      // multiple set_tag nodes at a glance.
+      return tagId ? `${mode} tag ${tagId.slice(0, 8)}…` : `${mode} tag (none picked)`;
+    }
+    case "handoff": {
+      const note = typeof cfg.note === "string" ? cfg.note : "";
+      return note.length > 0 ? truncate(note) : null;
+    }
+  }
+}
+
 function defaultConfigFor(type: NodeType): Record<string, unknown> {
   switch (type) {
     case "start":
@@ -774,6 +878,7 @@ function NodeCard({
 }) {
   const meta = NODE_META[node.node_type];
   const hasError = issues.some((i) => i.severity === "error");
+  const preview = summarizeNode(node);
   return (
     <div
       className={cn(
@@ -808,6 +913,11 @@ function NodeCard({
               </Badge>
             )}
           </div>
+          {!expanded && preview && (
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {preview}
+            </p>
+          )}
         </div>
         {hasError && (
           <CircleAlert className="h-3.5 w-3.5 shrink-0 text-red-400" />
