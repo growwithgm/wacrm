@@ -14,7 +14,7 @@
  */
 
 export const THEME_IDS = [
-  "violet",
+  "wasify",
   "emerald",
   "cobalt",
   "amber",
@@ -23,7 +23,7 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "wasify";
 
 export const STORAGE_KEY = "wasify.theme";
 
@@ -42,10 +42,10 @@ export interface ThemeMeta {
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
-    id: "violet",
-    name: "Violet",
-    tagline: "The default — confident, slightly playful.",
-    swatch: "oklch(0.526 0.247 293)",
+    id: "wasify",
+    name: "Wasify",
+    tagline: "The default — clean, modern WhatsApp Business green.",
+    swatch: "#16A34A",
   },
   {
     id: "emerald",

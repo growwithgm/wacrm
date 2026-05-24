@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import Script from "next/script";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -9,6 +9,12 @@ import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
 const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
+});
+
+const manrope = Manrope({
+  variable: "--font-heading",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -32,8 +38,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
-  colorScheme: "dark",
+  themeColor: "#F7F9FB",
+  colorScheme: "light",
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -69,7 +75,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme={DEFAULT_THEME}
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <head>
         <Script
@@ -82,13 +88,13 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <Toaster
-            theme="dark"
+            theme="light"
             position="top-right"
             toastOptions={{
               style: {
-                background: "rgb(30 41 59)",
-                border: "1px solid rgb(51 65 85)",
-                color: "white",
+                background: "#FFFFFF",
+                border: "1px solid #E5E7EB",
+                color: "#111827",
               },
             }}
           />
