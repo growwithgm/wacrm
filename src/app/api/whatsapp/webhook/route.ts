@@ -162,6 +162,12 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
+  // ── WEBHOOK-DEBUG ─────────────────────────────────────────────────────────
+  console.log('[WEBHOOK-DEBUG] POST received —', new Date().toISOString())
+  console.log('[WEBHOOK-DEBUG] Body received:', rawBody.substring(0, 500))
+  console.log('[WEBHOOK-DEBUG] x-hub-signature-256:', signature ?? '(none)')
+  // ──────────────────────────────────────────────────────────────────────────
+
   if (!verifyMetaWebhookSignature(rawBody, signature)) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
@@ -185,6 +191,24 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  // ── WEBHOOK-DEBUG: phone_number_id comparison ─────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const payloadPhoneId = (body as any).entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
+  console.log('[WEBHOOK-DEBUG] phone_number_id in payload:', payloadPhoneId ?? '(not found in payload)')
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: dbConfigs } = await supabaseAdmin().from('whatsapp_config').select('phone_number_id, status') as { data: any[] | null }
+    const dbIds = dbConfigs?.map((c) => c.phone_number_id) ?? []
+    console.log('[WEBHOOK-DEBUG] phone_number_ids in DB:', dbIds)
+    if (payloadPhoneId) {
+      const matched = dbIds.includes(payloadPhoneId)
+      console.log('[WEBHOOK-DEBUG] ID match:', matched ? '✓ FOUND — will process' : '✗ NOT FOUND — update Phone Number ID in Settings to: ' + payloadPhoneId)
+    }
+  } catch {
+    // non-fatal debug block
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Process asynchronously so we can ack Meta within their timeout.
   processWebhook(body).catch((error) => {
