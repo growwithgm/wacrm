@@ -31,6 +31,19 @@ import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
+const LS_KEY = 'wa_config_draft';
+
+function saveDraft(patch: { phoneNumberId?: string; wabaId?: string; accessToken?: string; verifyToken?: string; tokenEdited?: boolean }) {
+  try {
+    const current = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch {}
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(LS_KEY); } catch {}
+}
+
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
@@ -88,6 +101,20 @@ export function WhatsAppConfig() {
         setVerifyToken('');
         setTokenEdited(false);
       }
+
+      // Overlay any unsaved draft the user was typing before switching tabs
+      try {
+        const draft = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+        if (draft) {
+          if (draft.phoneNumberId !== undefined) setPhoneNumberId(draft.phoneNumberId);
+          if (draft.wabaId !== undefined) setWabaId(draft.wabaId);
+          if (draft.accessToken !== undefined && draft.tokenEdited) {
+            setAccessToken(draft.accessToken);
+            setTokenEdited(true);
+          }
+          if (draft.verifyToken !== undefined) setVerifyToken(draft.verifyToken);
+        }
+      } catch {}
 
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
@@ -185,6 +212,7 @@ export function WhatsAppConfig() {
           : 'Configuration saved successfully'
       );
 
+      clearDraft();
       if (user) await fetchConfig(user.id);
     } catch (err) {
       console.error('Save error:', err);
@@ -240,6 +268,7 @@ export function WhatsAppConfig() {
       }
 
       toast.success('Configuration cleared. You can now re-enter your credentials.');
+      clearDraft();
       setConfig(null);
       setPhoneNumberId('');
       setWabaId('');
@@ -345,7 +374,7 @@ export function WhatsAppConfig() {
               <Input
                 placeholder="e.g. 100234567890123"
                 value={phoneNumberId}
-                onChange={(e) => setPhoneNumberId(e.target.value)}
+                onChange={(e) => { setPhoneNumberId(e.target.value); saveDraft({ phoneNumberId: e.target.value }); }}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
               />
             </div>
@@ -355,7 +384,7 @@ export function WhatsAppConfig() {
               <Input
                 placeholder="e.g. 100234567890456"
                 value={wabaId}
-                onChange={(e) => setWabaId(e.target.value)}
+                onChange={(e) => { setWabaId(e.target.value); saveDraft({ wabaId: e.target.value }); }}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
               />
             </div>
@@ -370,6 +399,7 @@ export function WhatsAppConfig() {
                   onChange={(e) => {
                     setAccessToken(e.target.value);
                     setTokenEdited(true);
+                    saveDraft({ accessToken: e.target.value, tokenEdited: true });
                   }}
                   onFocus={() => {
                     if (accessToken === MASKED_TOKEN) {
@@ -399,7 +429,7 @@ export function WhatsAppConfig() {
               <Input
                 placeholder="Create a custom verify token"
                 value={verifyToken}
-                onChange={(e) => setVerifyToken(e.target.value)}
+                onChange={(e) => { setVerifyToken(e.target.value); saveDraft({ verifyToken: e.target.value }); }}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
               />
               <p className="text-xs text-slate-500">
