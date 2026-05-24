@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Eye,
@@ -67,6 +67,12 @@ export function WhatsAppConfig() {
   const [verifyToken, setVerifyToken] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
+  // Track which user ID we've already loaded config for. Supabase fires
+  // onAuthStateChange (TOKEN_REFRESHED) when the browser tab regains focus,
+  // producing a new User object reference with the same ID. Without this ref
+  // the useEffect below would call fetchConfig() again and wipe the form.
+  const fetchedForUserRef = useRef<string | null>(null);
+
   const webhookUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/whatsapp/webhook`
@@ -86,35 +92,33 @@ export function WhatsAppConfig() {
         console.error('Failed to load config row:', error);
       }
 
+      // Merge DB values with any unsaved draft in a single setState pass so
+      // there's no intermediate render where the DB values are briefly visible.
+      const draft = (() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null') ?? {}; }
+        catch { return {}; }
+      })();
+
       if (data) {
         setConfig(data);
-        setPhoneNumberId(data.phone_number_id || '');
-        setWabaId(data.waba_id || '');
-        setAccessToken(MASKED_TOKEN);
-        setVerifyToken('');
-        setTokenEdited(false);
+        setPhoneNumberId(draft.phoneNumberId ?? data.phone_number_id ?? '');
+        setWabaId(draft.wabaId ?? data.waba_id ?? '');
+        if (draft.accessToken && draft.tokenEdited) {
+          setAccessToken(draft.accessToken);
+          setTokenEdited(true);
+        } else {
+          setAccessToken(MASKED_TOKEN);
+          setTokenEdited(false);
+        }
+        setVerifyToken(draft.verifyToken ?? '');
       } else {
         setConfig(null);
-        setPhoneNumberId('');
-        setWabaId('');
-        setAccessToken('');
-        setVerifyToken('');
-        setTokenEdited(false);
+        setPhoneNumberId(draft.phoneNumberId ?? '');
+        setWabaId(draft.wabaId ?? '');
+        setAccessToken(draft.accessToken && draft.tokenEdited ? draft.accessToken : '');
+        setVerifyToken(draft.verifyToken ?? '');
+        setTokenEdited(!!draft.tokenEdited);
       }
-
-      // Overlay any unsaved draft the user was typing before switching tabs
-      try {
-        const draft = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-        if (draft) {
-          if (draft.phoneNumberId !== undefined) setPhoneNumberId(draft.phoneNumberId);
-          if (draft.wabaId !== undefined) setWabaId(draft.wabaId);
-          if (draft.accessToken !== undefined && draft.tokenEdited) {
-            setAccessToken(draft.accessToken);
-            setTokenEdited(true);
-          }
-          if (draft.verifyToken !== undefined) setVerifyToken(draft.verifyToken);
-        }
-      } catch {}
 
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
@@ -154,6 +158,11 @@ export function WhatsAppConfig() {
       setLoading(false);
       return;
     }
+    // Skip if we've already loaded for this user — prevents Supabase's
+    // TOKEN_REFRESHED event (fired on browser tab refocus) from wiping the
+    // form by calling fetchConfig() with a new User reference for the same ID.
+    if (fetchedForUserRef.current === user.id) return;
+    fetchedForUserRef.current = user.id;
     fetchConfig(user.id);
   }, [authLoading, user, fetchConfig]);
 
