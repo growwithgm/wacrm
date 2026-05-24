@@ -130,8 +130,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // Verify credentials with Meta BEFORE saving
-    let phoneInfo
+    // Attempt Meta verification — non-blocking. If Meta rejects the credentials
+    // we still save them (status → 'disconnected') and return a warning so the
+    // user can fix credentials later without losing their other config fields.
+    let phoneInfo: Awaited<ReturnType<typeof verifyPhoneNumber>> | null = null
+    let metaWarning: string | null = null
     try {
       phoneInfo = await verifyPhoneNumber({
         phoneNumberId: phone_number_id,
@@ -139,11 +142,8 @@ export async function POST(request: Request) {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API verification failed during save:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 400 }
-      )
+      console.warn('[whatsapp/config POST] Meta verification failed (non-blocking):', message)
+      metaWarning = message
     }
 
     // Encrypt sensitive tokens before storing
@@ -164,6 +164,9 @@ export async function POST(request: Request) {
       )
     }
 
+    const configStatus = phoneInfo ? 'connected' : 'disconnected'
+    const connectedAt = phoneInfo ? new Date().toISOString() : null
+
     // Upsert — overwrite any existing (possibly corrupted) config
     const { data: existing } = await supabase
       .from('whatsapp_config')
@@ -179,8 +182,8 @@ export async function POST(request: Request) {
           waba_id: waba_id || null,
           access_token: encryptedAccessToken,
           verify_token: encryptedVerifyToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
+          status: configStatus,
+          connected_at: connectedAt,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
@@ -188,7 +191,7 @@ export async function POST(request: Request) {
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
         return NextResponse.json(
-          { error: 'Failed to update configuration' },
+          { error: `Failed to update configuration: ${updateError.message}` },
           { status: 500 }
         )
       }
@@ -201,20 +204,24 @@ export async function POST(request: Request) {
           waba_id: waba_id || null,
           access_token: encryptedAccessToken,
           verify_token: encryptedVerifyToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
+          status: configStatus,
+          connected_at: connectedAt,
         })
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)
         return NextResponse.json(
-          { error: 'Failed to save configuration' },
+          { error: `Failed to save configuration: ${insertError.message}` },
           { status: 500 }
         )
       }
     }
 
-    return NextResponse.json({ success: true, phone_info: phoneInfo })
+    return NextResponse.json({
+      success: true,
+      phone_info: phoneInfo,
+      ...(metaWarning ? { warning: metaWarning } : {}),
+    })
   } catch (error) {
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

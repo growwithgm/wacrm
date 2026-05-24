@@ -215,11 +215,15 @@ export function WhatsAppConfig() {
         return;
       }
 
-      toast.success(
-        data.phone_info?.verified_name
-          ? `Connected to ${data.phone_info.verified_name}`
-          : 'Configuration saved successfully'
-      );
+      if (data.warning) {
+        toast.warning(`Credentials saved. Meta verification failed: ${data.warning}`);
+      } else {
+        toast.success(
+          data.phone_info?.verified_name
+            ? `Connected to ${data.phone_info.verified_name}`
+            : 'Configuration saved successfully'
+        );
+      }
 
       clearDraft();
       if (user) await fetchConfig(user.id);
