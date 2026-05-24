@@ -87,10 +87,10 @@ export function ContactForm({
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error('Not authenticated');
 
       let contactId = contact?.id;
 
@@ -145,7 +145,10 @@ export function ContactForm({
       onOpenChange(false);
       onSaved();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to save contact';
+      // Supabase PostgrestError may not extend Error in all versions — read
+      // .message directly so the actual DB error reaches the user.
+      const message =
+        (err as { message?: string })?.message ?? 'Failed to save contact';
       toast.error(message);
     } finally {
       setSaving(false);

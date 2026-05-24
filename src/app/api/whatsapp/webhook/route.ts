@@ -166,7 +166,16 @@ export async function POST(request: Request) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events.
-    console.warn('[webhook] rejected request with invalid signature')
+    const secret = process.env.META_APP_SECRET
+    if (secret === 'test123' || secret === 'your-app-secret') {
+      console.error(
+        '[webhook] Signature verification failed because META_APP_SECRET is still the placeholder value "' + secret + '". ' +
+        'Go to Meta for Developers → Your App → App Settings → Basic → App Secret, copy the real secret, ' +
+        'and set it as META_APP_SECRET in your .env.local and Vercel environment variables.'
+      )
+    } else {
+      console.warn('[webhook] rejected request with invalid HMAC-SHA256 signature — ensure META_APP_SECRET matches your Meta App Secret exactly')
+    }
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -200,7 +209,13 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       // Handle incoming messages
-      if (!value.messages || !value.contacts) continue
+      if (!value.messages) continue
+
+      // `contacts` is present for normal inbound messages but Meta may omit
+      // it for forwarded messages or edge-case payloads. Fall back to an empty
+      // array so individual messages still get processed using the sender's
+      // phone number as their display name.
+      const inboundContacts = value.contacts ?? []
 
       const phoneNumberId = value.metadata.phone_number_id
 
@@ -209,18 +224,32 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         .from('whatsapp_config')
         .select('*')
         .eq('phone_number_id', phoneNumberId)
-        .single()
+        .maybeSingle()
 
-      if (configError || !config) {
-        console.error('No config found for phone_number_id:', phoneNumberId)
+      if (configError) {
+        console.error('[webhook] DB error looking up config for phone_number_id', phoneNumberId, configError.message)
+        continue
+      }
+      if (!config) {
+        console.warn('[webhook] No whatsapp_config row found for phone_number_id:', phoneNumberId, '— is the config saved in Settings?')
         continue
       }
 
-      const decryptedAccessToken = decrypt(config.access_token)
+      let decryptedAccessToken: string
+      try {
+        decryptedAccessToken = decrypt(config.access_token)
+      } catch (err) {
+        console.error('[webhook] Failed to decrypt access_token for phone_number_id', phoneNumberId, err)
+        continue
+      }
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
-        const contact = value.contacts[i] || value.contacts[0]
+        // Use sender's wa_id as fallback name when contacts array is short or absent
+        const contact = inboundContacts[i] ?? inboundContacts[0] ?? {
+          profile: { name: message.from },
+          wa_id: message.from,
+        }
 
         await processMessage(
           message,
@@ -534,7 +563,11 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
-  const { error: msgError } = await supabaseAdmin().from('messages').insert({
+  // Build the insert row. reply_to_message_id (migration 009) and
+  // interactive_reply_id (migration 010) are omitted when null so the
+  // insert still succeeds on databases where only migration 001 has been
+  // applied — Postgres rejects unknown column names even with NULL values.
+  const messageRow: Record<string, unknown> = {
     conversation_id: conversation.id,
     sender_type: 'customer',
     content_type: contentType,
@@ -543,15 +576,14 @@ async function processMessage(
     message_id: message.id,
     status: 'delivered',
     created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
+  }
+  if (replyToInternalId !== null) messageRow.reply_to_message_id = replyToInternalId
+  if (interactiveReplyId !== null) messageRow.interactive_reply_id = interactiveReplyId
+
+  const { error: msgError } = await supabaseAdmin().from('messages').insert(messageRow)
 
   if (msgError) {
-    console.error('Error inserting message:', msgError)
+    console.error('[webhook] Error inserting message:', msgError.message, '| code:', msgError.code, '| details:', msgError.details)
     return
   }
 
@@ -567,7 +599,7 @@ async function processMessage(
     .eq('id', conversation.id)
 
   if (convError) {
-    console.error('Error updating conversation:', convError)
+    console.error('[webhook] Error updating conversation:', convError.message)
   }
 
   // If this contact was a recent broadcast recipient, flag the reply
