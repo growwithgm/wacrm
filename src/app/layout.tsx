@@ -13,16 +13,16 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "Wasify",
+    template: "%s — Wasify",
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "Wasify — WhatsApp Business API CRM platform.",
   robots: {
     index: false,
     follow: false,
   },
   icons: {
-    icon: [{ url: "/icon" }],
+    icon: "/favicon.png",
   },
   formatDetection: {
     email: false,
