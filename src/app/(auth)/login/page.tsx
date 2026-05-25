@@ -3,22 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare } from "lucide-react";
+  ArrowRight,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  MessageCircle,
+} from "lucide-react";
+
+const features = [
+  "Recover abandoned carts via WhatsApp",
+  "Manage support from one shared inbox",
+  "Launch broadcast campaigns",
+  "Build visual automation flows",
+];
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -29,10 +36,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -44,83 +48,150 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <MessageSquare className="h-6 w-6 text-primary" />
+    <div className="min-h-screen bg-[#F7F9FB] p-4 lg:p-8">
+      <div className="grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[2rem] border border-[#E5E7EB] bg-white shadow-2xl shadow-[#0B1F16]/8 lg:grid-cols-[1fr_0.9fr]">
+
+        {/* Left panel — dark brand */}
+        <div className="relative hidden bg-[#0B1F16] p-10 text-white lg:flex lg:flex-col">
+          <div
+            className="absolute inset-0 opacity-30"
+            style={{
+              background:
+                "radial-gradient(circle at 25% 25%, #22C55E 0, transparent 28%), radial-gradient(circle at 80% 70%, #16A34A 0, transparent 30%)",
+            }}
+          />
+          <div className="relative z-10 flex h-full flex-col">
+            <Image src="/logo.png" alt="Wasify" height={36} width={160} className="object-contain" priority />
+            <div className="my-auto max-w-xl">
+              <span className="inline-flex items-center rounded-full bg-[#22C55E]/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#22C55E]">
+                WhatsApp Business API SaaS
+              </span>
+              <h1 className="mt-6 text-5xl font-black leading-tight tracking-tight">
+                Automate. Engage. Grow.
+              </h1>
+              <p className="mt-5 text-base leading-7 text-white/65">
+                A premium CRM dashboard for shared inbox, contacts, sales pipelines, broadcasts, no-code automations and WhatsApp API settings.
+              </p>
+              <div className="mt-8 grid gap-3">
+                {features.map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/6 p-3"
+                  >
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-[#22C55E]" />
+                    <span className="font-bold">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-white/45">
+              Modern, secure and business focused Wasify experience.
+            </p>
           </div>
-          <CardTitle className="text-xl text-white">Welcome back</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Sign in to your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
-              </div>
-            )}
+        </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-foreground">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
+        {/* Right panel — form */}
+        <div className="flex items-center justify-center p-6 lg:p-10">
+          <div className="w-full max-w-md">
+            {/* Mobile logo */}
+            <div className="mb-8 lg:hidden">
+              <Image src="/logo.png" alt="Wasify" height={30} width={130} className="object-contain" />
             </div>
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-foreground">
-                  Password
-                </Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:text-primary/80"
-                >
-                  Forgot password?
-                </Link>
+            <div className="mb-8">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#16A34A]/10 text-[#16A34A]">
+                <MessageCircle className="h-6 w-6" />
               </div>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
+              <h2 className="text-3xl font-black tracking-tight text-[#111827]">
+                Welcome back
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                Sign in to manage WhatsApp sales, support and automations.
+              </p>
             </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
+            <form onSubmit={handleLogin} className="space-y-4">
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link
-              href="/signup"
-              className="text-primary hover:text-primary/80"
-            >
-              Create account
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
+              <div>
+                <label htmlFor="email" className="mb-2 block text-sm font-bold text-[#111827]">
+                  Email
+                </label>
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
+                  <Mail className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                  <input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label htmlFor="password" className="text-sm font-bold text-[#111827]">
+                    Password
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm font-bold text-[#16A34A] hover:text-[#12843d]"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
+                  <LockKeyhole className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[#6B7280] hover:text-[#111827]"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#16A34A] px-4 text-sm font-extrabold text-white shadow-lg shadow-[#16A34A]/20 transition hover:bg-[#12843d] disabled:opacity-50"
+              >
+                {loading ? (
+                  "Signing in..."
+                ) : (
+                  <>
+                    Sign in <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-[#6B7280]">
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" className="font-extrabold text-[#16A34A] hover:text-[#12843d]">
+                Create account
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

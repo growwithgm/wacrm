@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
 import {
   MessageSquare,
   UserPlus,
   DollarSign,
   Send,
+  TrendingUp,
 } from 'lucide-react'
 
 import {
@@ -117,12 +119,53 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Live analytics across conversations, contacts, deals, broadcasts, and automations.
-        </p>
+      {/* Hero banner */}
+      <div className="overflow-hidden rounded-3xl bg-[#0B1F16] p-6 text-white shadow-2xl shadow-[#0B1F16]/15 lg:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr] lg:items-center">
+          <div>
+            <span className="inline-flex items-center rounded-full bg-[#22C55E]/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#22C55E]">
+              Wasify CRM Automation
+            </span>
+            <h2 className="mt-5 max-w-3xl text-3xl font-black tracking-tight lg:text-4xl">
+              Automate WhatsApp sales, support, and customer journeys.
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 lg:text-base">
+              Track conversations, recover carts, manage deals, launch campaigns, and monitor API performance.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/broadcasts/new"
+                className="inline-flex h-11 items-center gap-2 rounded-2xl bg-[#16A34A] px-5 text-sm font-extrabold text-white shadow-lg shadow-[#16A34A]/20 transition hover:bg-[#12843d]"
+              >
+                Launch campaign
+              </Link>
+              <Link
+                href="/settings?tab=whatsapp"
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-5 text-sm font-extrabold text-white transition hover:bg-white/10"
+              >
+                WhatsApp API Settings
+              </Link>
+            </div>
+          </div>
+          {/* Right mini-card — shown only when metrics are loaded */}
+          {metrics && (
+            <div className="rounded-3xl border border-white/10 bg-white/6 p-5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-white/75">Active conversations</p>
+                <TrendingUp className="h-5 w-5 text-[#22C55E]" />
+              </div>
+              <p className="mt-4 text-4xl font-black">
+                {metrics.activeConversations.current.toLocaleString()}
+              </p>
+              <p className="mt-2 text-sm text-white/55">
+                Messages sent today:{' '}
+                <span className="font-bold text-white/80">
+                  {metrics.messagesSentToday.current.toLocaleString()}
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Metric cards */}

@@ -19,6 +19,9 @@ import {
   LogOut,
   User,
   X,
+  ShieldCheck,
+  ArrowRight,
+  ChevronDown,
 } from "lucide-react";
 import {
   Avatar,
@@ -37,10 +40,6 @@ interface NavItem {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  /**
-   * When true, the nav row renders a small "Beta" chip after the label.
-   * Purely informational — doesn't affect routing or access.
-   */
   beta?: boolean;
 }
 
@@ -52,14 +51,10 @@ const navItems: NavItem[] = [
   { href: "/broadcasts", label: "Broadcasts", icon: Radio },
   { href: "/automations", label: "Automations", icon: Zap },
   { href: "/flows", label: "Flows", icon: Workflow, beta: true },
-];
-
-const bottomNavItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 interface SidebarProps {
-  /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
   open?: boolean;
   onClose?: () => void;
 }
@@ -69,16 +64,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { profile, signOut } = useAuth();
   const totalUnread = useTotalUnread();
 
-  // Close the drawer when route changes — users opened it to navigate,
-  // so once they pick a destination the drawer should get out of the way.
   useEffect(() => {
     onClose?.();
-    // Only pathname drives this — onClose identity doesn't need to re-run it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Lock body scroll and allow Escape to close while the drawer is open on
-  // mobile. No-ops on desktop because the sidebar isn't positioned there.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -95,15 +85,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Backdrop — only exists on mobile and only when open. Clicking
-          it closes the drawer. Hidden from lg+ since the sidebar is
-          part of the main flex row there. */}
+      {/* Backdrop */}
       <button
         type="button"
         aria-label="Close menu"
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-30 bg-black/60 backdrop-blur-sm transition-opacity lg:hidden",
+          "fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity lg:hidden",
           open
             ? "pointer-events-auto opacity-100"
             : "pointer-events-none opacity-0",
@@ -112,17 +100,15 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-white/10 bg-[#0B1F16]",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col bg-[#0B1F16] p-5 text-white",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: static, always visible — reset all the mobile framing.
-          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          "lg:static lg:z-0 lg:w-64 lg:translate-x-0 lg:transition-none",
         )}
         aria-label="Primary"
       >
         {/* Logo row */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4">
+        <div className="flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center">
             <Image
               src="/logo.png"
@@ -137,120 +123,103 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-white/50 hover:bg-white/10 hover:text-white lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 hover:text-white lg:hidden"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Main navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/dashboard" && pathname.startsWith(item.href));
+        <nav className="mt-8 flex-1 overflow-y-auto space-y-1.5">
+          {navItems.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
-              const showUnreadDot =
-                item.href === "/inbox" && totalUnread > 0 && !isActive;
+            const showUnreadBadge =
+              item.href === "/inbox" && totalUnread > 0;
 
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
-                      isActive
-                        ? "bg-[#16A34A]/15 text-[#22C55E]"
-                        : "text-white/60 hover:bg-white/5 hover:text-white",
-                    )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "h-4 w-4",
-                        isActive ? "text-[#22C55E]" : "text-white/50",
-                      )}
-                    />
-                    <span className="flex-1">{item.label}</span>
-                    {item.beta && (
-                      <span
-                        aria-label="Beta feature"
-                        className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
-                      >
-                        Beta
-                      </span>
-                    )}
-                    {showUnreadDot && (
-                      <span
-                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
-                        className="relative flex h-2 w-2"
-                      >
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22C55E] opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-[#22C55E]" />
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-
-          <div className="my-4 border-t border-white/10" />
-
-          <ul className="flex flex-col gap-1">
-            {bottomNavItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
-                      isActive
-                        ? "bg-[#16A34A]/15 text-[#22C55E]"
-                        : "text-white/60 hover:bg-white/5 hover:text-white",
-                    )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "h-4 w-4",
-                        isActive ? "text-[#22C55E]" : "text-white/50",
-                      )}
-                    />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition",
+                  isActive
+                    ? "bg-[#16A34A] text-white shadow-lg shadow-[#16A34A]/20"
+                    : "text-white/65 hover:bg-white/8 hover:text-white",
+                )}
+              >
+                <span className="flex items-center gap-3">
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </span>
+                {item.beta && (
+                  <span className="rounded-full bg-[#22C55E]/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#22C55E]">
+                    Beta
+                  </span>
+                )}
+                {showUnreadBadge && !isActive && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22C55E] opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#22C55E]" />
+                  </span>
+                )}
+                {showUnreadBadge && isActive && (
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black text-white">
+                    {totalUnread}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
+        {/* API status card */}
+        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#16A34A]/20 text-[#22C55E]">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-black">API status</p>
+              <p className="text-xs text-white/55">All systems live</p>
+            </div>
+          </div>
+          <Link
+            href="/settings?tab=whatsapp"
+            className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 text-sm font-bold text-white transition hover:bg-white/10"
+          >
+            View config <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
         {/* User section */}
-        <div className="shrink-0 border-t border-white/10 p-3">
+        <div className="mt-3 shrink-0">
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5 focus:bg-white/5 focus:outline-none data-popup-open:bg-white/5">
-              <Avatar className="size-8 shrink-0">
+            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-white/8 focus:bg-white/8 focus:outline-none data-popup-open:bg-white/8">
+              <Avatar className="size-9 shrink-0">
                 {profile?.avatar_url ? (
                   <AvatarImage
                     src={profile.avatar_url}
                     alt={profile.full_name ?? "Avatar"}
                   />
                 ) : null}
-                <AvatarFallback className="bg-[#22C55E]/20 text-sm font-medium text-[#22C55E]">
+                <AvatarFallback className="bg-[#22C55E]/20 text-sm font-black text-[#22C55E]">
                   {profile?.full_name?.charAt(0)?.toUpperCase() ??
                     profile?.email?.charAt(0)?.toUpperCase() ??
                     "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
+                <p className="truncate text-sm font-bold text-white">
                   {profile?.full_name ?? "User"}
                 </p>
-                <p className="truncate text-xs text-white/60">
+                <p className="truncate text-xs text-white/55">
                   {profile?.email ?? ""}
                 </p>
               </div>
+              <ChevronDown className="h-4 w-4 shrink-0 text-white/40" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"

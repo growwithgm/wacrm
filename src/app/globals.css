@@ -112,8 +112,8 @@ html[data-theme="wasify"] {
   --chart-4: #F59E0B;
   --chart-5: #2563EB;
 
-  /* Radius — 8 px base → buttons 8 px, cards (rounded-xl = 1.4×) ≈ 11 px */
-  --radius: 0.5rem;
+  /* Radius — 12 px base → buttons/inputs rounded-2xl, cards rounded-3xl */
+  --radius: 0.75rem;
 
   /* Sidebar — Dark Green Black */
   --sidebar: #0B1F16;
