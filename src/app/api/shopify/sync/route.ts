@@ -24,15 +24,23 @@ function db(): any {
 
 // ─── GraphQL Query ────────────────────────────────────────────────────────────
 
+interface OrderAddress {
+  phone: string | null
+}
+
 interface CustomerNode {
   id: string
   firstName: string | null
   lastName: string | null
   email: string | null
-  phone: string | null
+  phone: string | null                  // customer profile phone
   numberOfOrders: number
   amountSpent: { amount: string; currencyCode: string } | null
-  lastOrder: { processedAt: string } | null
+  lastOrder: {
+    processedAt: string
+    shippingAddress: OrderAddress | null  // delivery phone — almost always present
+    billingAddress: OrderAddress | null   // billing phone — fallback
+  } | null
   tags: string[]
 }
 
@@ -56,7 +64,11 @@ const CUSTOMERS_QUERY = `
           phone
           numberOfOrders
           amountSpent { amount currencyCode }
-          lastOrder { processedAt }
+          lastOrder {
+            processedAt
+            shippingAddress { phone }
+            billingAddress  { phone }
+          }
           tags
         }
       }
@@ -64,18 +76,42 @@ const CUSTOMERS_QUERY = `
   }
 `
 
-// ─── Phone Normalization ──────────────────────────────────────────────────────
+// ─── Phone Resolution ─────────────────────────────────────────────────────────
 
 function tryNormalizePhone(raw: string | null): string | null {
-  if (!raw) return null
+  if (!raw?.trim()) return null
   try {
-    return normalizePhone(raw)
+    return normalizePhone(raw.trim())
   } catch {
-    // Shopify phone numbers are sometimes incomplete (e.g. no country code).
-    // Return the raw value so the contact can still be created; phone-based
-    // dedup just won't fire for this customer.
-    return raw
+    return raw.trim() // keep raw so display works even if E.164 fails
   }
+}
+
+/**
+ * Resolve the best available phone number for a Shopify customer.
+ *
+ * Priority:
+ *   1. customer.phone           — profile phone (explicitly set by merchant)
+ *   2. lastOrder.shippingAddress.phone — provided at checkout for delivery
+ *   3. lastOrder.billingAddress.phone  — billing contact
+ *   4. null                     — no phone anywhere; contact still importable via email
+ *
+ * Shipping addresses are the richest source: in many markets (especially
+ * South Asia / MENA where COD is common) a phone is mandatory for delivery
+ * even when the customer never filled in their profile phone. Expect ~60-75%
+ * of phone-less profiles to have a shipping address phone.
+ */
+function resolvePhone(customer: CustomerNode): string | null {
+  const candidates = [
+    customer.phone,
+    customer.lastOrder?.shippingAddress?.phone ?? null,
+    customer.lastOrder?.billingAddress?.phone ?? null,
+  ]
+  for (const raw of candidates) {
+    const p = tryNormalizePhone(raw)
+    if (p) return p
+  }
+  return null
 }
 
 // ─── Contact Upsert ───────────────────────────────────────────────────────────
@@ -197,11 +233,12 @@ export async function POST(request: Request) {
       (byShopifyIdRows ?? []).map((c: any) => [c.shopify_customer_id as string, c as ExistingContact]),
     )
 
-    // 2. By normalized phone — for customers not yet matched
+    // 2. By resolved phone — for customers not yet matched.
+    //    resolvePhone checks profile → shippingAddress → billingAddress.
     const unmatchedAfterShopifyId = edges.filter((e) => !shopifyIdMap.has(e.node.id))
     const phoneToShopifyId = new Map<string, string>()
     for (const { node } of unmatchedAfterShopifyId) {
-      const p = tryNormalizePhone(node.phone)
+      const p = resolvePhone(node)
       if (p) phoneToShopifyId.set(p, node.id)
     }
     const phonesToLookup = [...phoneToShopifyId.keys()]
@@ -222,11 +259,11 @@ export async function POST(request: Request) {
     // 3. By email — for customers still unmatched
     const matchedPhones = new Set(
       unmatchedAfterShopifyId
-        .map((e) => tryNormalizePhone(e.node.phone))
+        .map((e) => resolvePhone(e.node))
         .filter((p): p is string => !!p && phoneMap.has(p)),
     )
     const unmatchedAfterPhone = unmatchedAfterShopifyId.filter((e) => {
-      const p = tryNormalizePhone(e.node.phone)
+      const p = resolvePhone(e.node)
       return !p || !matchedPhones.has(p)
     })
     const emailToShopifyId = new Map<string, string>()
@@ -254,7 +291,8 @@ export async function POST(request: Request) {
 
     for (const { node: customer } of edges) {
       try {
-        const normalizedPhone = tryNormalizePhone(customer.phone)
+        // Use full fallback chain: profile → shippingAddress → billingAddress
+        const normalizedPhone = resolvePhone(customer)
         const fullName =
           [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() || null
 
