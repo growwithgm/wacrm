@@ -38,7 +38,7 @@ const categoryColors: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  Draft: 'bg-slate-600/20 text-muted-foreground border-slate-600/30',
+  Draft: 'bg-muted/50 text-muted-foreground border-border',
   Pending: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
   Approved: 'bg-primary/20 text-primary border-primary/30',
   Rejected: 'bg-red-600/20 text-red-400 border-red-600/30',
@@ -371,7 +371,7 @@ export function TemplateManager() {
                   </SelectTrigger>
                   <SelectContent className="bg-muted border-border">
                     {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat} className="text-foreground focus:bg-slate-700 focus:text-foreground">
+                      <SelectItem key={cat} value={cat} className="text-foreground focus:bg-muted focus:text-foreground">
                         {cat}
                       </SelectItem>
                     ))}
@@ -411,11 +411,11 @@ export function TemplateManager() {
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent className="bg-muted border-border">
-                  <SelectItem value="none" className="text-foreground focus:bg-slate-700 focus:text-foreground">
+                  <SelectItem value="none" className="text-foreground focus:bg-muted focus:text-foreground">
                     None
                   </SelectItem>
                   {HEADER_TYPES.map((type) => (
-                    <SelectItem key={type} value={type} className="text-foreground focus:bg-slate-700 focus:text-foreground">
+                    <SelectItem key={type} value={type} className="text-foreground focus:bg-muted focus:text-foreground">
                       {type.charAt(0).toUpperCase() + type.slice(1)}
                     </SelectItem>
                   ))}

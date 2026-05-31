@@ -298,7 +298,7 @@ export function ShopifyConfig() {
                     : 'Not Connected'}
                 </p>
                 {checking && (
-                  <RefreshCw className="size-3.5 animate-spin text-slate-400" />
+                  <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
                 )}
               </div>
               {!isConnected && (
@@ -310,7 +310,7 @@ export function ShopifyConfig() {
               {isConnected && config?.plan && (
                 <p className="mt-1 text-xs text-green-300/70">Plan: {config.plan}</p>
               )}
-              <p className="mt-1.5 text-xs text-slate-400">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 Last synced:{' '}
                 {checking ? 'Verifying…' : formatTimestamp(config?.last_synced_at)}
               </p>
@@ -320,26 +320,26 @@ export function ShopifyConfig() {
 
         {/* Connect / Manage card */}
         {!isConnected ? (
-          <Card className="bg-slate-900 border-slate-700">
+          <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="text-foreground flex items-center gap-2">
                 <ShoppingCart className="size-5" />
                 Connect Shopify Store
               </CardTitle>
-              <CardDescription className="text-slate-400">
+              <CardDescription className="text-muted-foreground">
                 Enter your Shopify store domain to start the OAuth connection flow.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Store domain</Label>
+                <Label className="text-foreground">Store domain</Label>
                 <div className="flex gap-2">
                   <Input
                     placeholder="mystore.myshopify.com"
                     value={shopDomain}
                     onChange={(e) => setShopDomain(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-                    className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   />
                   <Button
                     onClick={handleConnect}
@@ -348,7 +348,7 @@ export function ShopifyConfig() {
                     Connect <ArrowRight className="size-4" />
                   </Button>
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   You will be redirected to Shopify to authorise the connection.
                   You can enter just the subdomain (e.g. <code>mystore</code>) or
                   the full domain.
@@ -359,22 +359,22 @@ export function ShopifyConfig() {
         ) : (
           <>
             {/* Store info */}
-            <Card className="bg-slate-900 border-slate-700">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <Store className="size-5" />
                   Connected Store
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex justify-between rounded-xl bg-slate-800 px-4 py-3">
-                  <span className="text-sm text-slate-400">Store</span>
-                  <span className="text-sm font-medium text-white">
+                <div className="flex justify-between rounded-xl bg-muted px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Store</span>
+                  <span className="text-sm font-medium text-foreground">
                     {config?.shop_name ?? '—'}
                   </span>
                 </div>
-                <div className="flex justify-between rounded-xl bg-slate-800 px-4 py-3">
-                  <span className="text-sm text-slate-400">Domain</span>
+                <div className="flex justify-between rounded-xl bg-muted px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Domain</span>
                   <a
                     href={`https://${config?.store_domain}/admin`}
                     target="_blank"
@@ -385,9 +385,9 @@ export function ShopifyConfig() {
                     <ExternalLink className="size-3" />
                   </a>
                 </div>
-                <div className="flex justify-between rounded-xl bg-slate-800 px-4 py-3">
-                  <span className="text-sm text-slate-400">Last synced</span>
-                  <span className="text-sm text-white">
+                <div className="flex justify-between rounded-xl bg-muted px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Last synced</span>
+                  <span className="text-sm text-foreground">
                     {formatTimestamp(config?.last_synced_at)}
                   </span>
                 </div>
@@ -396,7 +396,7 @@ export function ShopifyConfig() {
 
             {/* Sync progress / result */}
             {(sync.running || sync.total_processed > 0) && (
-              <Card className="bg-slate-900 border-slate-700">
+              <Card className="bg-card border-border">
                 <CardContent className="pt-5">
                   <div className="flex items-center gap-3">
                     {sync.running ? (
@@ -405,12 +405,12 @@ export function ShopifyConfig() {
                       <CheckCircle2 className="size-5 text-green-400" />
                     )}
                     <div>
-                      <p className="text-sm font-medium text-white">
+                      <p className="text-sm font-medium text-foreground">
                         {sync.running
                           ? `Syncing… ${sync.total_processed.toLocaleString()} processed`
                           : `Sync complete — ${sync.total_processed.toLocaleString()} processed`}
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted-foreground">
                         {sync.created} imported · {sync.updated} updated
                         {sync.errors > 0 && ` · ${sync.errors} errors`}
                       </p>
@@ -460,18 +460,18 @@ export function ShopifyConfig() {
 
       {/* ── Right: info sidebar ──────────────────────────────────────────── */}
       <div>
-        <Card className="bg-slate-900 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white text-base">
+            <CardTitle className="text-foreground text-base">
               Shopify Integration
             </CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-muted-foreground">
               Phase 1: OAuth connect + customer data sync.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2 text-sm text-slate-400">
-              <p className="font-medium text-slate-300">What gets synced</p>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">What gets synced</p>
               <ul className="space-y-1 list-disc list-inside">
                 <li>Customer name, email, phone (E.164)</li>
                 <li>Lifetime order count &amp; total spend</li>
@@ -480,8 +480,8 @@ export function ShopifyConfig() {
               </ul>
             </div>
 
-            <div className="space-y-2 text-sm text-slate-400">
-              <p className="font-medium text-slate-300">Dedup logic</p>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Dedup logic</p>
               <ol className="space-y-1 list-decimal list-inside">
                 <li>Match on Shopify customer ID</li>
                 <li>Match on phone number</li>
@@ -493,7 +493,7 @@ export function ShopifyConfig() {
               </p>
             </div>
 
-            <div className="pt-2 border-t border-slate-700">
+            <div className="pt-2 border-t border-border">
               <a
                 href="https://shopify.dev/docs/api/admin-graphql"
                 target="_blank"
