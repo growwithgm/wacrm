@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Settings, MessageSquare, Tag, User, Palette } from 'lucide-react';
+import { Settings, MessageSquare, Tag, User, Palette, ShoppingCart } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
+import { ShopifyConfig } from '@/components/settings/shopify-config';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { TagManager } from '@/components/settings/tag-manager';
 import { ProfileForm } from '@/components/settings/profile-form';
@@ -14,6 +15,7 @@ import { AppearancePanel } from '@/components/settings/appearance-panel';
 const TAB_VALUES = [
   'profile',
   'whatsapp',
+  'shopify',
   'templates',
   'tags',
   'appearance',
@@ -68,6 +70,13 @@ export default function SettingsPage() {
             WhatsApp Config
           </TabsTrigger>
           <TabsTrigger
+            value="shopify"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <ShoppingCart className="size-4" />
+            Shopify
+          </TabsTrigger>
+          <TabsTrigger
             value="templates"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
@@ -98,6 +107,10 @@ export default function SettingsPage() {
 
         <TabsContent value="whatsapp">
           <WhatsAppConfig />
+        </TabsContent>
+
+        <TabsContent value="shopify">
+          <ShopifyConfig />
         </TabsContent>
 
         <TabsContent value="templates">
