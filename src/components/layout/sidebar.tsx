@@ -100,7 +100,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col bg-[#0B1F16] p-5 text-white",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col bg-sidebar p-5 text-sidebar-foreground",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           "lg:static lg:z-0 lg:w-64 lg:translate-x-0 lg:transition-none",
@@ -146,8 +146,8 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 className={cn(
                   "flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition",
                   isActive
-                    ? "bg-[#16A34A] text-white shadow-lg shadow-[#16A34A]/20"
-                    : "text-white/65 hover:bg-white/8 hover:text-white",
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                    : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                 )}
               >
                 <span className="flex items-center gap-3">
@@ -155,18 +155,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   {item.label}
                 </span>
                 {item.beta && (
-                  <span className="rounded-full bg-[#22C55E]/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#22C55E]">
+                  <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sidebar-primary">
                     Beta
                   </span>
                 )}
                 {showUnreadBadge && !isActive && (
                   <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22C55E] opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#22C55E]" />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sidebar-primary opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-sidebar-primary" />
                   </span>
                 )}
                 {showUnreadBadge && isActive && (
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black text-white">
+                  <span className="rounded-full bg-sidebar-foreground/20 px-2 py-0.5 text-[10px] font-black text-sidebar-foreground">
                     {totalUnread}
                   </span>
                 )}
@@ -176,9 +176,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </nav>
 
         {/* API status card */}
-        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div className="mt-4 rounded-3xl border border-sidebar-border bg-sidebar-foreground/5 p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#16A34A]/20 text-[#22C55E]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/20 text-sidebar-primary">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -188,7 +188,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </div>
           <Link
             href="/settings?tab=whatsapp"
-            className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 text-sm font-bold text-white transition hover:bg-white/10"
+            className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-sidebar-border bg-sidebar-foreground/5 text-sm font-bold text-sidebar-foreground transition hover:bg-sidebar-foreground/10"
           >
             View config <ArrowRight className="h-4 w-4" />
           </Link>
@@ -197,7 +197,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* User section */}
         <div className="mt-3 shrink-0">
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-white/8 focus:bg-white/8 focus:outline-none data-popup-open:bg-white/8">
+            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent focus:bg-sidebar-accent focus:outline-none data-popup-open:bg-sidebar-accent">
               <Avatar className="size-9 shrink-0">
                 {profile?.avatar_url ? (
                   <AvatarImage
@@ -205,7 +205,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     alt={profile.full_name ?? "Avatar"}
                   />
                 ) : null}
-                <AvatarFallback className="bg-[#22C55E]/20 text-sm font-black text-[#22C55E]">
+                <AvatarFallback className="bg-sidebar-primary/20 text-sm font-black text-sidebar-primary">
                   {profile?.full_name?.charAt(0)?.toUpperCase() ??
                     profile?.email?.charAt(0)?.toUpperCase() ??
                     "U"}
@@ -225,14 +225,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               align="end"
               side="top"
               sideOffset={6}
-              className="min-w-56 bg-[#0D2B1D] text-white ring-white/10"
+              className="min-w-56 bg-sidebar-surface-2 text-sidebar-foreground ring-sidebar-border"
             >
               <DropdownMenuItem
                 render={
                   <Link
                     href="/settings?tab=profile"
                     onClick={onClose}
-                    className="text-white/80 focus:bg-white/10 focus:text-white"
+                    className="text-sidebar-foreground/80 focus:bg-sidebar-foreground/10 focus:text-sidebar-foreground"
                   />
                 }
               >
@@ -244,7 +244,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   <Link
                     href="/settings?tab=whatsapp"
                     onClick={onClose}
-                    className="text-white/80 focus:bg-white/10 focus:text-white"
+                    className="text-sidebar-foreground/80 focus:bg-sidebar-foreground/10 focus:text-sidebar-foreground"
                   />
                 }
               >

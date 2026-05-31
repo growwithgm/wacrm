@@ -120,10 +120,10 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5">
       {/* Hero banner */}
-      <div className="overflow-hidden rounded-3xl bg-[#0B1F16] p-6 text-white shadow-2xl shadow-[#0B1F16]/15 lg:p-8">
+      <div className="overflow-hidden rounded-3xl bg-sidebar p-6 text-white shadow-2xl shadow-sidebar/15 lg:p-8">
         <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr] lg:items-center">
           <div>
-            <span className="inline-flex items-center rounded-full bg-[#22C55E]/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#22C55E]">
+            <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-primary-hover">
               Wasify CRM Automation
             </span>
             <h2 className="mt-5 max-w-3xl text-3xl font-black tracking-tight lg:text-4xl">
@@ -135,7 +135,7 @@ export default function DashboardPage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/broadcasts/new"
-                className="inline-flex h-11 items-center gap-2 rounded-2xl bg-[#16A34A] px-5 text-sm font-extrabold text-white shadow-lg shadow-[#16A34A]/20 transition hover:bg-[#12843d]"
+                className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90"
               >
                 Launch campaign
               </Link>
@@ -152,7 +152,7 @@ export default function DashboardPage() {
             <div className="rounded-3xl border border-white/10 bg-white/6 p-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold text-white/75">Active conversations</p>
-                <TrendingUp className="h-5 w-5 text-[#22C55E]" />
+                <TrendingUp className="h-5 w-5 text-primary-hover" />
               </div>
               <p className="mt-4 text-4xl font-black">
                 {metrics.activeConversations.current.toLocaleString()}

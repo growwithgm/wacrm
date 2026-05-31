@@ -40,19 +40,19 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F7F9FB] p-4">
-        <div className="w-full max-w-md rounded-3xl border border-[#E5E7EB] bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-[#16A34A]/10 text-[#16A34A]">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-3xl border border-border bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">
             <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111827]">Check your email</h2>
-          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+          <h2 className="text-2xl font-black tracking-tight text-foreground">Check your email</h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
             We&apos;ve sent a password reset link to{" "}
-            <span className="font-bold text-[#111827]">{email}</span>. Please check your inbox.
+            <span className="font-bold text-foreground">{email}</span>. Please check your inbox.
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-[#E5E7EB] text-sm font-bold text-[#111827] transition hover:bg-[#F7F9FB]"
+            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border text-sm font-bold text-foreground transition hover:bg-background"
           >
             <ArrowLeft className="h-4 w-4" /> Back to sign in
           </Link>
@@ -62,22 +62,22 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F9FB] p-4 lg:p-8">
-      <div className="grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[2rem] border border-[#E5E7EB] bg-white shadow-2xl shadow-[#0B1F16]/8 lg:grid-cols-[1fr_0.9fr]">
+    <div className="min-h-screen bg-background p-4 lg:p-8">
+      <div className="grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[2rem] border border-border bg-white shadow-2xl shadow-black/8 lg:grid-cols-[1fr_0.9fr]">
 
         {/* Left panel */}
-        <div className="relative hidden bg-[#0B1F16] p-10 text-white lg:flex lg:flex-col">
+        <div className="relative hidden bg-sidebar p-10 text-white lg:flex lg:flex-col">
           <div
             className="absolute inset-0 opacity-30"
             style={{
               background:
-                "radial-gradient(circle at 25% 25%, #22C55E 0, transparent 28%), radial-gradient(circle at 80% 70%, #16A34A 0, transparent 30%)",
+                "radial-gradient(circle at 25% 25%, var(--primary-hover) 0, transparent 28%), radial-gradient(circle at 80% 70%, var(--primary) 0, transparent 30%)",
             }}
           />
           <div className="relative z-10 flex h-full flex-col">
             <Image src="/logo.png" alt="Wasify" height={36} width={160} className="object-contain" priority />
             <div className="my-auto max-w-xl">
-              <span className="inline-flex items-center rounded-full bg-[#22C55E]/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#22C55E]">
+              <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-primary">
                 Account Recovery
               </span>
               <h1 className="mt-6 text-5xl font-black leading-tight tracking-tight">
@@ -102,13 +102,13 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="mb-8">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#16A34A]/10 text-[#16A34A]">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <KeyRound className="h-6 w-6" />
               </div>
-              <h2 className="text-3xl font-black tracking-tight text-[#111827]">
+              <h2 className="text-3xl font-black tracking-tight text-foreground">
                 Reset your password
               </h2>
-              <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 Enter your email and we will send a secure reset link.
               </p>
             </div>
@@ -121,11 +121,11 @@ export default function ForgotPasswordPage() {
               )}
 
               <div>
-                <label htmlFor="email" className="mb-2 block text-sm font-bold text-[#111827]">
+                <label htmlFor="email" className="mb-2 block text-sm font-bold text-foreground">
                   Email
                 </label>
-                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
-                  <Mail className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-border bg-white px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
+                  <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
                     id="email"
                     type="email"
@@ -133,7 +133,7 @@ export default function ForgotPasswordPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
@@ -141,7 +141,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#16A34A] px-4 text-sm font-extrabold text-white shadow-lg shadow-[#16A34A]/20 transition hover:bg-[#12843d] disabled:opacity-50"
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-extrabold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
               >
                 {loading ? (
                   "Sending..."
@@ -156,7 +156,7 @@ export default function ForgotPasswordPage() {
             <div className="mt-6 text-center">
               <Link
                 href="/login"
-                className="inline-flex items-center gap-2 text-sm font-extrabold text-[#16A34A] hover:text-[#12843d]"
+                className="inline-flex items-center gap-2 text-sm font-extrabold text-primary hover:text-primary/80"
               >
                 <ArrowLeft className="h-4 w-4" /> Back to sign in
               </Link>

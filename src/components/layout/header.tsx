@@ -68,7 +68,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             <span>/</span>
             <span className="text-primary">{title}</span>
           </div>
-          <h1 className="truncate text-xl font-black tracking-tight text-foreground lg:text-2xl">
+          <h1 className="truncate font-heading text-xl font-bold tracking-tight text-foreground lg:text-2xl">
             {title}
           </h1>
         </div>

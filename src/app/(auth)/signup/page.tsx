@@ -68,19 +68,19 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F7F9FB] p-4">
-        <div className="w-full max-w-md rounded-3xl border border-[#E5E7EB] bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-[#16A34A]/10 text-[#16A34A]">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-3xl border border-border bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">
             <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111827]">Check your email</h2>
-          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+          <h2 className="text-2xl font-black tracking-tight text-foreground">Check your email</h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
             We&apos;ve sent a confirmation link to{" "}
-            <span className="font-bold text-[#111827]">{email}</span>. Please check your inbox and click the link to verify your account.
+            <span className="font-bold text-foreground">{email}</span>. Please check your inbox and click the link to verify your account.
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-[#E5E7EB] text-sm font-bold text-[#111827] transition hover:bg-[#F7F9FB]"
+            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border text-sm font-bold text-foreground transition hover:bg-background"
           >
             <ArrowLeft className="h-4 w-4" /> Back to sign in
           </Link>
@@ -90,22 +90,22 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F9FB] p-4 lg:p-8">
-      <div className="grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[2rem] border border-[#E5E7EB] bg-white shadow-2xl shadow-[#0B1F16]/8 lg:grid-cols-[1fr_0.9fr]">
+    <div className="min-h-screen bg-background p-4 lg:p-8">
+      <div className="grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[2rem] border border-border bg-white shadow-2xl shadow-black/8 lg:grid-cols-[1fr_0.9fr]">
 
         {/* Left panel */}
-        <div className="relative hidden bg-[#0B1F16] p-10 text-white lg:flex lg:flex-col">
+        <div className="relative hidden bg-sidebar p-10 text-white lg:flex lg:flex-col">
           <div
             className="absolute inset-0 opacity-30"
             style={{
               background:
-                "radial-gradient(circle at 25% 25%, #22C55E 0, transparent 28%), radial-gradient(circle at 80% 70%, #16A34A 0, transparent 30%)",
+                "radial-gradient(circle at 25% 25%, var(--primary-hover) 0, transparent 28%), radial-gradient(circle at 80% 70%, var(--primary) 0, transparent 30%)",
             }}
           />
           <div className="relative z-10 flex h-full flex-col">
             <Image src="/logo.png" alt="Wasify" height={36} width={160} className="object-contain" priority />
             <div className="my-auto max-w-xl">
-              <span className="inline-flex items-center rounded-full bg-[#22C55E]/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#22C55E]">
+              <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-primary">
                 WhatsApp Business API SaaS
               </span>
               <h1 className="mt-6 text-5xl font-black leading-tight tracking-tight">
@@ -120,7 +120,7 @@ export default function SignupPage() {
                     key={item}
                     className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/6 p-3"
                   >
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-[#22C55E]" />
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
                     <span className="font-bold">{item}</span>
                   </div>
                 ))}
@@ -141,13 +141,13 @@ export default function SignupPage() {
             </div>
 
             <div className="mb-8">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#16A34A]/10 text-[#16A34A]">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <MessageCircle className="h-6 w-6" />
               </div>
-              <h2 className="text-3xl font-black tracking-tight text-[#111827]">
+              <h2 className="text-3xl font-black tracking-tight text-foreground">
                 Create your Wasify account
               </h2>
-              <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 Start building smarter WhatsApp customer journeys.
               </p>
             </div>
@@ -161,11 +161,11 @@ export default function SignupPage() {
 
               {/* Full name */}
               <div>
-                <label htmlFor="fullName" className="mb-2 block text-sm font-bold text-[#111827]">
+                <label htmlFor="fullName" className="mb-2 block text-sm font-bold text-foreground">
                   Full name
                 </label>
-                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
-                  <UserRound className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-border bg-white px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
+                  <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
                     id="fullName"
                     type="text"
@@ -173,18 +173,18 @@ export default function SignupPage() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
 
               {/* Email */}
               <div>
-                <label htmlFor="email" className="mb-2 block text-sm font-bold text-[#111827]">
+                <label htmlFor="email" className="mb-2 block text-sm font-bold text-foreground">
                   Email
                 </label>
-                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
-                  <Mail className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-border bg-white px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
+                  <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
                     id="email"
                     type="email"
@@ -192,18 +192,18 @@ export default function SignupPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
 
               {/* Password */}
               <div>
-                <label htmlFor="password" className="mb-2 block text-sm font-bold text-[#111827]">
+                <label htmlFor="password" className="mb-2 block text-sm font-bold text-foreground">
                   Password
                 </label>
-                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
-                  <LockKeyhole className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-border bg-white px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
+                  <LockKeyhole className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -211,12 +211,12 @@ export default function SignupPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="text-[#6B7280] hover:text-[#111827]"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -225,11 +225,11 @@ export default function SignupPage() {
 
               {/* Confirm password */}
               <div>
-                <label htmlFor="confirmPassword" className="mb-2 block text-sm font-bold text-[#111827]">
+                <label htmlFor="confirmPassword" className="mb-2 block text-sm font-bold text-foreground">
                   Confirm password
                 </label>
-                <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white px-4 focus-within:border-[#16A34A] focus-within:ring-4 focus-within:ring-[#16A34A]/10">
-                  <LockKeyhole className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-border bg-white px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
+                  <LockKeyhole className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
                     id="confirmPassword"
                     type={showConfirm ? "text" : "password"}
@@ -237,12 +237,12 @@ export default function SignupPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#111827] outline-none placeholder:text-[#9CA3AF]"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirm(!showConfirm)}
-                    className="text-[#6B7280] hover:text-[#111827]"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -252,7 +252,7 @@ export default function SignupPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#16A34A] px-4 text-sm font-extrabold text-white shadow-lg shadow-[#16A34A]/20 transition hover:bg-[#12843d] disabled:opacity-50"
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-extrabold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
               >
                 {loading ? (
                   "Creating account..."
@@ -264,9 +264,9 @@ export default function SignupPage() {
               </button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-[#6B7280]">
+            <p className="mt-6 text-center text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link href="/login" className="font-extrabold text-[#16A34A] hover:text-[#12843d]">
+              <Link href="/login" className="font-extrabold text-primary hover:text-primary/80">
                 Sign in
               </Link>
             </p>
