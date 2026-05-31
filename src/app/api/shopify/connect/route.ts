@@ -54,8 +54,9 @@ export async function GET(request: Request) {
 
     // Resolve the callback URL: prefer the explicit env var, fall back to the
     // origin of the current request (works in local dev without env config).
-    const origin =
+    const origin = (
       process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin
+    ).replace(/\/+$/, '')   // strip any trailing slashes so we never produce //
     const redirectUri = `${origin}/api/shopify/callback`
 
     const authUrl = new URL(`https://${shop}/admin/oauth/authorize`)

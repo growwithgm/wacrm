@@ -40,8 +40,9 @@ interface ShopData {
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const origin =
+  const origin = (
     process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin
+  ).replace(/\/+$/, '')   // strip any trailing slashes so we never produce //
 
   const redirect = (path: string) =>
     NextResponse.redirect(`${origin}${path}`, { status: 302 })
