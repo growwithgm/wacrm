@@ -210,10 +210,17 @@ export async function POST(request: Request) {
   }
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Process asynchronously so we can ack Meta within their timeout.
-  processWebhook(body).catch((error) => {
-    console.error('Error processing webhook:', error)
-  })
+  // Await processing before responding. On Vercel, fire-and-forget promises
+  // are NOT guaranteed to run after the response is returned — the Lambda
+  // can be recycled immediately. Awaiting here ensures the DB writes complete
+  // while staying within Meta's 20-second webhook timeout (typical processing
+  // is < 5 s for a text message). Meta retries on timeout anyway, so the
+  // worst case is a duplicate — far better than silently dropping messages.
+  try {
+    await processWebhook(body)
+  } catch (error) {
+    console.error('[webhook] processWebhook threw:', error)
+  }
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
@@ -508,21 +515,31 @@ async function processMessage(
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 
+  console.log('[webhook] processMessage START — from:', message.from, '| normalized:', senderPhone, '| type:', message.type, '| userId:', userId)
+
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
     userId,
     senderPhone,
     contactName
   )
-  if (!contactOutcome) return
+  if (!contactOutcome) {
+    console.error('[webhook] processMessage ABORTED — findOrCreateContact returned null for phone:', senderPhone)
+    return
+  }
   const contactRecord = contactOutcome.contact
+  console.log('[webhook] contact resolved — id:', contactRecord.id, '| wasCreated:', contactOutcome.wasCreated)
 
   // Find or create conversation
   const conversation = await findOrCreateConversation(
     userId,
     contactRecord.id
   )
-  if (!conversation) return
+  if (!conversation) {
+    console.error('[webhook] processMessage ABORTED — findOrCreateConversation returned null for contact:', contactRecord.id)
+    return
+  }
+  console.log('[webhook] conversation resolved — id:', conversation.id)
 
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.
@@ -604,12 +621,14 @@ async function processMessage(
   if (replyToInternalId !== null) messageRow.reply_to_message_id = replyToInternalId
   if (interactiveReplyId !== null) messageRow.interactive_reply_id = interactiveReplyId
 
+  console.log('[webhook] inserting message — metaId:', message.id, '| contentType:', contentType, '| conversationId:', conversation.id)
   const { error: msgError } = await supabaseAdmin().from('messages').insert(messageRow)
 
   if (msgError) {
-    console.error('[webhook] Error inserting message:', msgError.message, '| code:', msgError.code, '| details:', msgError.details)
+    console.error('[webhook] FAILED to insert message — message:', msgError.message, '| code:', msgError.code, '| details:', msgError.details, '| hint:', msgError.hint)
     return
   }
+  console.log('[webhook] message inserted OK — conversationId:', conversation.id)
 
   // Update conversation
   const { error: convError } = await supabaseAdmin()
@@ -623,7 +642,9 @@ async function processMessage(
     .eq('id', conversation.id)
 
   if (convError) {
-    console.error('[webhook] Error updating conversation:', convError.message)
+    console.error('[webhook] Error updating conversation:', convError.message, '| code:', convError.code, '| details:', convError.details)
+  } else {
+    console.log('[webhook] conversation updated OK — id:', conversation.id)
   }
 
   // If this contact was a recent broadcast recipient, flag the reply
@@ -869,6 +890,8 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
+  console.log('[webhook] findOrCreateContact — userId:', userId, '| phone:', phone)
+
   // Look up existing contacts for this user
   const { data: contacts, error: contactsError } = await supabaseAdmin()
     .from('contacts')
@@ -876,14 +899,17 @@ async function findOrCreateContact(
     .eq('user_id', userId)
 
   if (contactsError) {
-    console.error('Error fetching contacts:', contactsError)
+    console.error('[webhook] findOrCreateContact: DB error fetching contacts — message:', contactsError.message, '| code:', contactsError.code, '| details:', contactsError.details, '| hint:', contactsError.hint)
     return null
   }
+
+  console.log('[webhook] findOrCreateContact — existing contacts for user:', contacts?.length ?? 0)
 
   // Use phonesMatch for flexible matching
   const existingContact = contacts?.find((c: ContactRow) => phonesMatch(c.phone, phone))
 
   if (existingContact) {
+    console.log('[webhook] findOrCreateContact — found existing contact id:', existingContact.id)
     // Update name if it changed
     if (name && name !== existingContact.name) {
       await supabaseAdmin()
@@ -895,6 +921,7 @@ async function findOrCreateContact(
   }
 
   // Create new contact
+  console.log('[webhook] findOrCreateContact — no match, creating new contact for phone:', phone)
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
     .insert({
@@ -906,27 +933,38 @@ async function findOrCreateContact(
     .single()
 
   if (createError) {
-    console.error('Error creating contact:', createError)
+    console.error('[webhook] findOrCreateContact: DB error creating contact — message:', createError.message, '| code:', createError.code, '| details:', createError.details, '| hint:', createError.hint)
     return null
   }
 
+  console.log('[webhook] findOrCreateContact — created new contact id:', newContact.id)
   return { contact: newContact, wasCreated: true }
 }
 
 async function findOrCreateConversation(userId: string, contactId: string) {
-  // Look for existing conversation
+  console.log('[webhook] findOrCreateConversation — userId:', userId, '| contactId:', contactId)
+
+  // Use maybeSingle() so 0 rows returns { data: null, error: null } instead
+  // of PGRST116 — semantically correct and avoids spurious error logs.
   const { data: existing, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('user_id', userId)
     .eq('contact_id', contactId)
-    .single()
+    .maybeSingle()
 
-  if (!findError && existing) {
+  if (findError) {
+    console.error('[webhook] findOrCreateConversation: DB error finding conversation — message:', findError.message, '| code:', findError.code, '| details:', findError.details)
+    // Non-fatal: fall through and try to create
+  }
+
+  if (existing) {
+    console.log('[webhook] findOrCreateConversation — found existing id:', existing.id)
     return existing
   }
 
   // Create new conversation
+  console.log('[webhook] findOrCreateConversation — none found, creating new')
   const { data: newConv, error: createError } = await supabaseAdmin()
     .from('conversations')
     .insert({
@@ -937,9 +975,10 @@ async function findOrCreateConversation(userId: string, contactId: string) {
     .single()
 
   if (createError) {
-    console.error('Error creating conversation:', createError)
+    console.error('[webhook] findOrCreateConversation: DB error creating conversation — message:', createError.message, '| code:', createError.code, '| details:', createError.details, '| hint:', createError.hint)
     return null
   }
 
+  console.log('[webhook] findOrCreateConversation — created new id:', newConv.id)
   return newConv
 }
