@@ -1,25 +1,15 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Settings, MessageSquare, Tag, User, Palette, ShoppingCart } from 'lucide-react';
+import { Settings, User, Palette } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { ShopifyConfig } from '@/components/settings/shopify-config';
-import { TemplateManager } from '@/components/settings/template-manager';
-import { TagManager } from '@/components/settings/tag-manager';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { PasswordForm } from '@/components/settings/password-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 
-const TAB_VALUES = [
-  'profile',
-  'whatsapp',
-  'shopify',
-  'templates',
-  'tags',
-  'appearance',
-] as const;
+const TAB_VALUES = ['profile', 'whatsapp', 'appearance'] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
 function isTabValue(v: string | null): v is TabValue {
@@ -30,10 +20,6 @@ export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // The URL is the single source of truth for the active tab — no
-  // local state, no sync effect. A previous revision duplicated this
-  // into `useState` + a sync effect, which tripped React 19's
-  // set-state-in-effect rule and was also redundant.
   const queryTab = searchParams.get('tab');
   const tab: TabValue = isTabValue(queryTab) ? queryTab : 'profile';
 
@@ -46,10 +32,9 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage your profile, WhatsApp® integration, message templates, and
-          tags.
+        <h1 className="font-heading text-2xl font-bold text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage your profile, WhatsApp® configuration, and appearance.
         </p>
       </div>
 
@@ -70,27 +55,6 @@ export default function SettingsPage() {
             WhatsApp Config
           </TabsTrigger>
           <TabsTrigger
-            value="shopify"
-            className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-          >
-            <ShoppingCart className="size-4" />
-            Shopify
-          </TabsTrigger>
-          <TabsTrigger
-            value="templates"
-            className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-          >
-            <MessageSquare className="size-4" />
-            Templates
-          </TabsTrigger>
-          <TabsTrigger
-            value="tags"
-            className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-          >
-            <Tag className="size-4" />
-            Tags
-          </TabsTrigger>
-          <TabsTrigger
             value="appearance"
             className="data-active:bg-muted data-active:text-primary text-muted-foreground"
           >
@@ -107,18 +71,6 @@ export default function SettingsPage() {
 
         <TabsContent value="whatsapp">
           <WhatsAppConfig />
-        </TabsContent>
-
-        <TabsContent value="shopify">
-          <ShopifyConfig />
-        </TabsContent>
-
-        <TabsContent value="templates">
-          <TemplateManager />
-        </TabsContent>
-
-        <TabsContent value="tags">
-          <TagManager />
         </TabsContent>
 
         <TabsContent value="appearance">

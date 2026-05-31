@@ -18,14 +18,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/inbox": "Inbox",
-  "/contacts": "Contacts",
-  "/pipelines": "Pipelines",
+  "/dashboard":  "Dashboard",
+  "/inbox":      "Inbox",
+  "/contacts":   "Contacts",
+  "/pipelines":  "Pipelines",
   "/broadcasts": "Broadcasts",
-  "/automations": "Automations",
-  "/flows": "Flows",
-  "/settings": "Settings",
+  "/automations":"Automations",
+  "/flows":      "Flows",
+  "/templates":  "Templates",
+  "/shopify":    "Shopify",
+  "/tags":       "Tags",
+  "/settings":   "Settings",
 };
 
 function getPageTitle(pathname: string): string {

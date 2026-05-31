@@ -22,6 +22,9 @@ import {
   ShieldCheck,
   ArrowRight,
   ChevronDown,
+  FileText,
+  ShoppingCart,
+  Tag,
 } from "lucide-react";
 import {
   Avatar,
@@ -44,14 +47,17 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
+  { href: "/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/inbox",      label: "Inbox",      icon: MessageSquare },
+  { href: "/contacts",   label: "Contacts",   icon: Users },
+  { href: "/pipelines",  label: "Pipelines",  icon: GitBranch },
   { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/automations",label: "Automations",icon: Zap },
+  { href: "/flows",      label: "Flows",      icon: Workflow, beta: true },
+  { href: "/templates",  label: "Templates",  icon: FileText },
+  { href: "/shopify",    label: "Shopify",    icon: ShoppingCart },
+  { href: "/tags",       label: "Tags",       icon: Tag },
+  { href: "/settings",   label: "Settings",   icon: Settings },
 ];
 
 interface SidebarProps {
@@ -183,7 +189,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             </div>
             <div>
               <p className="text-sm font-black">API status</p>
-              <p className="text-xs text-white/55">All systems live</p>
+              <p className="text-xs text-sidebar-foreground/55">All systems live</p>
             </div>
           </div>
           <Link
