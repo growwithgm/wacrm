@@ -13,6 +13,7 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -30,7 +31,6 @@ import {
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
-
 const LS_KEY = 'wa_config_draft';
 
 function saveDraft(patch: { phoneNumberId?: string; wabaId?: string; accessToken?: string; verifyToken?: string; tokenEdited?: boolean }) {
@@ -44,6 +44,18 @@ function clearDraft() {
   try { localStorage.removeItem(LS_KEY); } catch {}
 }
 
+function formatTimestamp(ts: string | null): string {
+  if (!ts) return 'Never';
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    return ts;
+  }
+}
+
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
@@ -52,6 +64,7 @@ export function WhatsAppConfig() {
   const { user, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -60,6 +73,8 @@ export function WhatsAppConfig() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [wabaName, setWabaName] = useState<string>('');
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -67,10 +82,6 @@ export function WhatsAppConfig() {
   const [verifyToken, setVerifyToken] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
-  // Track which user ID we've already loaded config for. Supabase fires
-  // onAuthStateChange (TOKEN_REFRESHED) when the browser tab regains focus,
-  // producing a new User object reference with the same ID. Without this ref
-  // the useEffect below would call fetchConfig() again and wipe the form.
   const fetchedForUserRef = useRef<string | null>(null);
 
   const webhookUrl =
@@ -80,8 +91,9 @@ export function WhatsAppConfig() {
 
   const fetchConfig = useCallback(async (userId: string) => {
     setLoading(true);
+    let hasConfig = false;
+
     try {
-      // Load form values from Supabase (shows what's in DB)
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
@@ -92,14 +104,13 @@ export function WhatsAppConfig() {
         console.error('Failed to load config row:', error);
       }
 
-      // Merge DB values with any unsaved draft in a single setState pass so
-      // there's no intermediate render where the DB values are briefly visible.
       const draft = (() => {
         try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null') ?? {}; }
         catch { return {}; }
       })();
 
       if (data) {
+        hasConfig = true;
         setConfig(data);
         setPhoneNumberId(draft.phoneNumberId ?? data.phone_number_id ?? '');
         setWabaId(draft.wabaId ?? data.waba_id ?? '');
@@ -111,6 +122,10 @@ export function WhatsAppConfig() {
           setTokenEdited(false);
         }
         setVerifyToken(draft.verifyToken ?? '');
+        // Show cached status immediately from DB
+        setConnectionStatus(data.status === 'connected' ? 'connected' : 'disconnected');
+        setWabaName((data as unknown as Record<string, unknown>).waba_name as string ?? '');
+        setLastCheckedAt((data as unknown as Record<string, unknown>).last_checked_at as string ?? null);
       } else {
         setConfig(null);
         setPhoneNumberId(draft.phoneNumberId ?? '');
@@ -118,37 +133,41 @@ export function WhatsAppConfig() {
         setAccessToken(draft.accessToken && draft.tokenEdited ? draft.accessToken : '');
         setVerifyToken(draft.verifyToken ?? '');
         setTokenEdited(!!draft.tokenEdited);
-      }
-
-      // Then verify health via the API (decrypts token + pings Meta)
-      if (data) {
-        try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-          const payload = await res.json();
-
-          if (payload.connected) {
-            setConnectionStatus('connected');
-            setResetReason(null);
-            setStatusMessage('');
-          } else {
-            setConnectionStatus('disconnected');
-            setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
-            setStatusMessage(payload.message || '');
-          }
-        } catch (err) {
-          console.error('Health check failed:', err);
-          setConnectionStatus('disconnected');
-        }
-      } else {
         setConnectionStatus('disconnected');
-        setResetReason(null);
-        setStatusMessage('');
+        setWabaName('');
+        setLastCheckedAt(null);
       }
     } catch (err) {
       console.error('fetchConfig error:', err);
       toast.error('Failed to load WhatsApp configuration');
     } finally {
       setLoading(false);
+    }
+
+    // Background re-validation — updates banner without blocking form render.
+    if (!hasConfig) return;
+    setChecking(true);
+    try {
+      const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+      const payload = await res.json();
+
+      if (payload.connected) {
+        setConnectionStatus('connected');
+        setWabaName(payload.waba_info?.name ?? '');
+        setLastCheckedAt(payload.last_checked_at ?? null);
+        setResetReason(null);
+        setStatusMessage('');
+      } else {
+        setConnectionStatus('disconnected');
+        setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
+        setStatusMessage(payload.message || '');
+        setLastCheckedAt(payload.last_checked_at ?? null);
+      }
+    } catch (err) {
+      console.error('Background health check failed:', err);
+      // Keep cached status — don't change anything
+    } finally {
+      setChecking(false);
     }
   }, [supabase]);
 
@@ -158,9 +177,6 @@ export function WhatsAppConfig() {
       setLoading(false);
       return;
     }
-    // Skip if we've already loaded for this user — prevents Supabase's
-    // TOKEN_REFRESHED event (fired on browser tab refocus) from wiping the
-    // form by calling fetchConfig() with a new User reference for the same ID.
     if (fetchedForUserRef.current === user.id) return;
     fetchedForUserRef.current = user.id;
     fetchConfig(user.id);
@@ -179,10 +195,6 @@ export function WhatsAppConfig() {
     try {
       setSaving(true);
 
-      // Always POST through the API — it verifies with Meta and encrypts
-      // the access_token server-side with ENCRYPTION_KEY. Skipping this
-      // and writing direct to Supabase stores the token in plaintext,
-      // which then fails decryption on every subsequent health check.
       const payload: Record<string, unknown> = {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
@@ -192,10 +204,6 @@ export function WhatsAppConfig() {
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
         payload.access_token = accessToken.trim();
       } else if (config) {
-        // Existing config — reuse stored encrypted token by decrypting on the
-        // server. But our POST handler requires an access_token to verify
-        // with Meta. If the user didn't change the token, we need to signal
-        // that. Simplest: require token re-entry if they're updating.
         toast.error('Please re-enter the Access Token to save changes');
         setSaving(false);
         return;
@@ -218,14 +226,12 @@ export function WhatsAppConfig() {
       if (data.warning) {
         toast.warning(`Credentials saved. Meta verification failed: ${data.warning}`);
       } else {
-        toast.success(
-          data.phone_info?.verified_name
-            ? `Connected to ${data.phone_info.verified_name}`
-            : 'Configuration saved successfully'
-        );
+        const name = data.waba_info?.name || data.phone_info?.verified_name;
+        toast.success(name ? `Connected to ${name}` : 'Configuration saved successfully');
       }
 
       clearDraft();
+      fetchedForUserRef.current = null; // Force re-fetch
       if (user) await fetchConfig(user.id);
     } catch (err) {
       console.error('Save error:', err);
@@ -243,13 +249,12 @@ export function WhatsAppConfig() {
 
       if (payload.connected) {
         setConnectionStatus('connected');
+        setWabaName(payload.waba_info?.name ?? '');
+        setLastCheckedAt(payload.last_checked_at ?? null);
         setResetReason(null);
         setStatusMessage('');
-        toast.success(
-          payload.phone_info?.verified_name
-            ? `Connected to ${payload.phone_info.verified_name}`
-            : 'API connection successful'
-        );
+        const name = payload.waba_info?.name || payload.phone_info?.verified_name;
+        toast.success(name ? `Connected to ${name}` : 'API connection successful');
       } else {
         setConnectionStatus('disconnected');
         setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
@@ -269,7 +274,6 @@ export function WhatsAppConfig() {
     if (!confirm('This will delete the current WhatsApp config so you can re-enter it. Continue?')) {
       return;
     }
-
     try {
       setResetting(true);
       const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
@@ -291,6 +295,8 @@ export function WhatsAppConfig() {
       setConnectionStatus('disconnected');
       setResetReason(null);
       setStatusMessage('');
+      setWabaName('');
+      setLastCheckedAt(null);
     } catch (err) {
       console.error('Reset error:', err);
       toast.error('Failed to reset configuration');
@@ -318,6 +324,7 @@ export function WhatsAppConfig() {
     <div className="grid gap-6 lg:grid-cols-[1fr_380px] mt-4">
       {/* Main config form */}
       <div className="space-y-6">
+
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="bg-amber-950/40 border-amber-600/40">
@@ -337,15 +344,9 @@ export function WhatsAppConfig() {
                   className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
                 >
                   {resetting ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Resetting...
-                    </>
+                    <><Loader2 className="size-4 animate-spin" />Resetting...</>
                   ) : (
-                    <>
-                      <RotateCcw className="size-4" />
-                      Reset Configuration
-                    </>
+                    <><RotateCcw className="size-4" />Reset Configuration</>
                   )}
                 </Button>
               </div>
@@ -353,25 +354,42 @@ export function WhatsAppConfig() {
           </Alert>
         )}
 
-        {/* Connection Status */}
-        <Alert className="bg-slate-900 border-slate-700">
-          <div className="flex items-center gap-2">
+        {/* ─── Connection Status Banner ─── */}
+        <div
+          className={
+            connectionStatus === 'connected'
+              ? 'rounded-xl border border-green-500 bg-green-900/50 p-4'
+              : 'rounded-xl border border-red-500 bg-red-900/50 p-4'
+          }
+        >
+          <div className="flex items-start gap-3">
             {connectionStatus === 'connected' ? (
-              <CheckCircle2 className="size-4 text-primary" />
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-green-400" />
             ) : (
-              <XCircle className="size-4 text-red-500" />
+              <XCircle className="mt-0.5 size-5 shrink-0 text-red-400" />
             )}
-            <AlertTitle className="text-white mb-0">
-              {connectionStatus === 'connected' ? 'Connected' : 'Not Connected'}
-            </AlertTitle>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className={connectionStatus === 'connected' ? 'font-semibold text-green-200' : 'font-semibold text-red-200'}>
+                  {connectionStatus === 'connected'
+                    ? `Connected${wabaName ? ` — Account: ${wabaName}` : ''}`
+                    : 'Not Connected'}
+                </p>
+                {checking && (
+                  <RefreshCw className="size-3.5 animate-spin text-slate-400" />
+                )}
+              </div>
+              {connectionStatus !== 'connected' && (
+                <p className="mt-1 text-sm text-red-300/80">
+                  {statusMessage || 'Configure your Meta API credentials below to connect your WhatsApp Business account.'}
+                </p>
+              )}
+              <p className="mt-1.5 text-xs text-slate-400">
+                Last checked: {checking ? 'Verifying…' : formatTimestamp(lastCheckedAt)}
+              </p>
+            </div>
           </div>
-          <AlertDescription className="text-slate-400">
-            {connectionStatus === 'connected'
-              ? 'Your WhatsApp Business API is connected and ready to send/receive messages.'
-              : statusMessage ||
-                'Configure your Meta API credentials below to connect your WhatsApp Business account.'}
-          </AlertDescription>
-        </Alert>
+        </div>
 
         {/* API Credentials */}
         <Card className="bg-slate-900 border-slate-700 ring-0 ring-transparent">
@@ -490,10 +508,7 @@ export function WhatsAppConfig() {
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             {saving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Saving...
-              </>
+              <><Loader2 className="size-4 animate-spin" />Saving...</>
             ) : (
               'Save Configuration'
             )}
@@ -505,15 +520,9 @@ export function WhatsAppConfig() {
             className="border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800"
           >
             {testing ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Testing...
-              </>
+              <><Loader2 className="size-4 animate-spin" />Testing...</>
             ) : (
-              <>
-                <Zap className="size-4" />
-                Test API Connection
-              </>
+              <><Zap className="size-4" />Test API Connection</>
             )}
           </Button>
           {config && (
@@ -524,15 +533,9 @@ export function WhatsAppConfig() {
               className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
             >
               {resetting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Resetting...
-                </>
+                <><Loader2 className="size-4 animate-spin" />Resetting...</>
               ) : (
-                <>
-                  <RotateCcw className="size-4" />
-                  Reset Configuration
-                </>
+                <><RotateCcw className="size-4" />Reset Configuration</>
               )}
             </Button>
           )}

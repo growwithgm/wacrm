@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
+import { verifyPhoneNumber, verifyWABA } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /**
  * GET /api/whatsapp/config
  *
- * Used by the "Test API Connection" button and by the page to check
- * whether the saved config is healthy. Returns 200 in all non-auth cases
- * so the UI can render an appropriate message rather than show a 500.
+ * Health-check: decrypts the stored token, verifies with Meta, and writes
+ * the fresh status back to the DB so the next page-load can show a cached
+ * result immediately before the background re-validation completes.
  *
  * Response shape:
- *   { connected: true,  phone_info: {...} }
+ *   { connected: true,  phone_info: {...}, waba_info: {...} | null, last_checked_at: string }
  *   { connected: false, reason: 'no_config',        message: '...' }
  *   { connected: false, reason: 'token_corrupted',  message: '...', needs_reset: true }
  *   { connected: false, reason: 'meta_api_error',   message: '...' }
@@ -31,7 +31,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, waba_id, access_token, status, waba_name, last_checked_at')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -54,13 +54,18 @@ export async function GET() {
       )
     }
 
-    // Try to decrypt the stored token with the current ENCRYPTION_KEY.
-    // If this fails, the key changed (or was never consistent across envs).
+    // Try to decrypt the stored token.
     let accessToken: string
     try {
       accessToken = decrypt(config.access_token)
     } catch (err) {
       console.error('[whatsapp/config GET] Token decryption failed:', err)
+
+      await supabase
+        .from('whatsapp_config')
+        .update({ status: 'disconnected', last_checked_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+
       return NextResponse.json(
         {
           connected: false,
@@ -73,16 +78,22 @@ export async function GET() {
       )
     }
 
-    // Validate credentials against Meta
+    // Validate phone number against Meta.
+    let phoneInfo: Awaited<ReturnType<typeof verifyPhoneNumber>>
     try {
-      const phoneInfo = await verifyPhoneNumber({
+      phoneInfo = await verifyPhoneNumber({
         phoneNumberId: config.phone_number_id,
         accessToken,
       })
-      return NextResponse.json({ connected: true, phone_info: phoneInfo })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
       console.error('[whatsapp/config GET] Meta API verification failed:', message)
+
+      await supabase
+        .from('whatsapp_config')
+        .update({ status: 'disconnected', last_checked_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+
       return NextResponse.json(
         {
           connected: false,
@@ -92,6 +103,36 @@ export async function GET() {
         { status: 200 }
       )
     }
+
+    // Optionally fetch WABA account name (non-blocking — failure keeps status connected).
+    let wabaInfo: Awaited<ReturnType<typeof verifyWABA>> | null = null
+    if (config.waba_id) {
+      try {
+        wabaInfo = await verifyWABA({ wabaId: config.waba_id, accessToken })
+      } catch (err) {
+        console.warn('[whatsapp/config GET] WABA name fetch failed (non-blocking):', err)
+      }
+    }
+
+    // Write fresh status back to DB so subsequent page loads show cached result.
+    const lastCheckedAt = new Date().toISOString()
+    const dbUpdate: Record<string, unknown> = {
+      status: 'connected',
+      last_checked_at: lastCheckedAt,
+    }
+    if (wabaInfo?.name) dbUpdate.waba_name = wabaInfo.name
+
+    await supabase
+      .from('whatsapp_config')
+      .update(dbUpdate)
+      .eq('user_id', user.id)
+
+    return NextResponse.json({
+      connected: true,
+      phone_info: phoneInfo,
+      waba_info: wabaInfo,
+      last_checked_at: lastCheckedAt,
+    })
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
     return NextResponse.json(
@@ -104,8 +145,8 @@ export async function GET() {
 /**
  * POST /api/whatsapp/config
  *
- * Saves or updates the WhatsApp config for the authenticated user.
- * Verifies credentials with Meta first, then encrypts and stores.
+ * Saves or updates the WhatsApp config. Verifies credentials with Meta first,
+ * fetches WABA account name if waba_id is provided, then encrypts and stores.
  */
 export async function POST(request: Request) {
   try {
@@ -130,23 +171,28 @@ export async function POST(request: Request) {
       )
     }
 
-    // Attempt Meta verification — non-blocking. If Meta rejects the credentials
-    // we still save them (status → 'disconnected') and return a warning so the
-    // user can fix credentials later without losing their other config fields.
+    // Phone number verification — non-blocking (save with warning if Meta rejects).
     let phoneInfo: Awaited<ReturnType<typeof verifyPhoneNumber>> | null = null
     let metaWarning: string | null = null
     try {
-      phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: phone_number_id,
-        accessToken: access_token,
-      })
+      phoneInfo = await verifyPhoneNumber({ phoneNumberId: phone_number_id, accessToken: access_token })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
       console.warn('[whatsapp/config POST] Meta verification failed (non-blocking):', message)
       metaWarning = message
     }
 
-    // Encrypt sensitive tokens before storing
+    // WABA account name — non-blocking, only attempted when waba_id is provided.
+    let wabaInfo: Awaited<ReturnType<typeof verifyWABA>> | null = null
+    if (waba_id && access_token) {
+      try {
+        wabaInfo = await verifyWABA({ wabaId: waba_id, accessToken: access_token })
+      } catch (err) {
+        console.warn('[whatsapp/config POST] WABA name fetch failed (non-blocking):', err)
+      }
+    }
+
+    // Encrypt sensitive tokens.
     let encryptedAccessToken: string
     let encryptedVerifyToken: string | null
     try {
@@ -166,8 +212,8 @@ export async function POST(request: Request) {
 
     const configStatus = phoneInfo ? 'connected' : 'disconnected'
     const connectedAt = phoneInfo ? new Date().toISOString() : null
+    const lastCheckedAt = new Date().toISOString()
 
-    // Upsert — overwrite any existing (possibly corrupted) config
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id')
@@ -184,6 +230,8 @@ export async function POST(request: Request) {
           verify_token: encryptedVerifyToken,
           status: configStatus,
           connected_at: connectedAt,
+          waba_name: wabaInfo?.name ?? null,
+          last_checked_at: lastCheckedAt,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
@@ -206,6 +254,8 @@ export async function POST(request: Request) {
           verify_token: encryptedVerifyToken,
           status: configStatus,
           connected_at: connectedAt,
+          waba_name: wabaInfo?.name ?? null,
+          last_checked_at: lastCheckedAt,
         })
 
       if (insertError) {
@@ -220,6 +270,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       phone_info: phoneInfo,
+      waba_info: wabaInfo,
+      last_checked_at: lastCheckedAt,
       ...(metaWarning ? { warning: metaWarning } : {}),
     })
   } catch (error) {

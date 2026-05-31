@@ -42,6 +42,33 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
 // Phone number / account
 // ============================================================
 
+export interface MetaWABAInfo {
+  id: string
+  name: string
+}
+
+export interface VerifyWABAArgs {
+  wabaId: string
+  accessToken: string
+}
+
+/**
+ * Fetch WhatsApp Business Account metadata (id, name) via the WABA endpoint.
+ * Requires the access token to have `whatsapp_business_management` permission.
+ * Used to display the business account name in the connection status banner.
+ */
+export async function verifyWABA(args: VerifyWABAArgs): Promise<MetaWABAInfo> {
+  const { wabaId, accessToken } = args
+  const url = `${META_API_BASE}/${wabaId}?fields=id,name`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta WABA API error: ${response.status}`)
+  }
+  return response.json()
+}
+
 export interface VerifyPhoneNumberArgs {
   phoneNumberId: string
   accessToken: string
