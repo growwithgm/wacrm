@@ -27,6 +27,10 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  /* Wasify 2 handoff: softer hairline divider + warm chat canvas. Both
+   * fall back to existing tokens so the dark themes keep working. */
+  --color-border-soft: var(--border-soft, var(--border));
+  --color-chat: var(--chat-bg, var(--muted));
   --color-warning: var(--warning);
   --color-info: var(--info);
   --color-destructive: var(--destructive);
@@ -40,6 +44,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-2: var(--primary-soft-2);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -107,8 +112,12 @@ html[data-theme="wasify"] {
 
   /* Borders & inputs */
   --border: #E5E7EB;
+  --border-soft: #EEF1F4;
   --input: #E5E7EB;
   --ring: #16A34A;
+
+  /* Inbox chat canvas — warm WhatsApp-style cream (Wasify 2 handoff) */
+  --chat-bg: #F3F2EE;
 
   /* Charts */
   --chart-1: #16A34A;
@@ -295,4 +304,16 @@ html[data-theme="rose"] {
   html {
     @apply font-sans;
   }
+}
+
+/* ============================================================
+ * Wasify 2 — inbox chat canvas
+ * Warm cream with a subtle dotted grid, matching the approved
+ * "Wasify 2" prototype. Used by the message thread + its empty
+ * state so both render the same surface.
+ * ============================================================ */
+.wf-chat-bg {
+  background-color: var(--chat-bg, var(--muted));
+  background-image: radial-gradient(rgba(11, 31, 22, 0.045) 1px, transparent 0);
+  background-size: 22px 22px;
 }

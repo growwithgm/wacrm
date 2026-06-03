@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -13,6 +14,13 @@ import { Header } from "@/components/layout/header";
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // The Inbox owns a fixed full-height, four-column layout (list · chat ·
+  // profile) and manages its own internal scrolling, so the shell gives it
+  // the whole content area with no padding and no outer scroll. Every other
+  // page keeps the standard padded, scrollable canvas.
+  const isFullBleed = pathname?.startsWith("/inbox") ?? false;
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
   // always visible and this stays at `false` (ignored by the component).
@@ -41,10 +49,19 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
-        {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        {/* Full-bleed routes (Inbox) fill the area and scroll internally;
+            standard routes get padding + an outer scroll. min-h-0 lets the
+            flex child shrink so internal scroll containers work. */}
+        <main
+          className={cn(
+            "min-h-0 flex-1",
+            isFullBleed ? "overflow-hidden" : "overflow-y-auto p-4 sm:p-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );
