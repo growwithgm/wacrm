@@ -20,6 +20,7 @@ import { resolveOrderPhone, type RestOrder } from '@/lib/shopify/transform'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, phonesMatch, phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils'
+import { resolveTemplateLanguage } from '@/lib/whatsapp/templates'
 
 // ─── COD order detection ────────────────────────────────────────────────────
 
@@ -123,12 +124,35 @@ async function sendCodTemplate(
   if (!wa?.access_token) throw new Error('WhatsApp not configured')
 
   const accessToken = decrypt(wa.access_token)
+
+  // Resolve the Meta-approved language code EXACTLY like /api/whatsapp/send:
+  // the language synced from Meta into message_templates is guaranteed to match
+  // an approved translation. The shopify_config default ('es') can mismatch
+  // Meta's real code (e.g. 'es_ES') and trigger #132001 "Template name does not
+  // exist in the translation". Honor the config language only if Meta has it;
+  // otherwise use the synced code; fall back to the config value if unsynced.
+  const effectiveLanguage =
+    (await resolveTemplateLanguage(db, userId, templateName, language)) ?? language
+  if (effectiveLanguage !== language) {
+    console.warn('[cod] language corrected from config', {
+      templateName,
+      config: language,
+      approved: effectiveLanguage,
+    })
+  }
+
   const sanitized = sanitizePhoneForMeta(phone)
   // Same trunk-0 resilience as /api/whatsapp/send: try the with/without
   // leading-zero variants, retrying ONLY on Meta's "recipient not in allowed
   // list" rejection. Any other error is terminal.
   const variants = phoneVariants(sanitized)
-  console.log('[cod] sending template', { to: sanitized, variants, templateName, language, params })
+  console.log('[cod] sending template', {
+    to: sanitized,
+    variants,
+    templateName,
+    language: effectiveLanguage,
+    params,
+  })
 
   let result: { messageId: string } | null = null
   let workingPhone = sanitized
@@ -141,7 +165,7 @@ async function sendCodTemplate(
         accessToken,
         to: variant,
         templateName,
-        language,
+        language: effectiveLanguage,
         params,
       })
       workingPhone = variant
@@ -159,7 +183,7 @@ async function sendCodTemplate(
     // Every variant failed (or a terminal error). Surface it in the inbox with
     // Meta's exact error instead of leaving an empty conversation, then re-throw.
     const detail = lastError instanceof Error ? lastError.message : String(lastError)
-    console.error('[cod] template send failed', { phone: sanitized, templateName, language, detail })
+    console.error('[cod] template send failed', { phone: sanitized, templateName, language: effectiveLanguage, detail })
     await db.from('messages').insert({
       conversation_id: conversationId,
       sender_type: 'bot',

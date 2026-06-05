@@ -9,6 +9,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
+import { resolveTemplateLanguage } from '@/lib/whatsapp/templates'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -178,16 +179,10 @@ export async function POST(request: Request) {
     // guaranteed to match an approved translation.
     let templateLanguage: string | undefined = template_language
     if (message_type === 'template' && !templateLanguage && template_name) {
-      const { data: tpl } = await supabase
-        .from('message_templates')
-        .select('language')
-        .eq('user_id', user.id)
-        .eq('name', template_name)
-        .not('language', 'is', null)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      templateLanguage = tpl?.language ?? undefined
+      // Shared resolver — the COD engine uses the same one so a template
+      // sent manually and via COD always carries the identical language code.
+      templateLanguage =
+        (await resolveTemplateLanguage(supabase, user.id, template_name)) ?? undefined
     }
     if (message_type === 'template') {
       console.log('[whatsapp/send] template send', {
