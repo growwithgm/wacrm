@@ -121,14 +121,44 @@ async function sendCodTemplate(
     .maybeSingle()
   if (!wa?.access_token) throw new Error('WhatsApp not configured')
 
-  const result = await sendTemplateMessage({
-    phoneNumberId: wa.phone_number_id,
-    accessToken: decrypt(wa.access_token),
-    to: sanitizePhoneForMeta(phone),
-    templateName,
-    language,
-    params,
-  })
+  const to = sanitizePhoneForMeta(phone)
+  console.log('[cod] sending template', { to, templateName, language, params })
+
+  let result: { messageId: string }
+  try {
+    result = await sendTemplateMessage({
+      phoneNumberId: wa.phone_number_id,
+      accessToken: decrypt(wa.access_token),
+      to,
+      templateName,
+      language,
+      params,
+    })
+  } catch (err) {
+    // Surface the failure in the inbox instead of swallowing it: record a
+    // failed message in the conversation carrying Meta's exact error, so the
+    // conversation appears and the reason is visible without digging through
+    // Vercel logs. Re-throw so the caller doesn't mark the message as sent.
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error('[cod] template send failed', { to, templateName, language, detail })
+    await db.from('messages').insert({
+      conversation_id: conversationId,
+      sender_type: 'bot',
+      content_type: 'template',
+      template_name: templateName,
+      status: 'failed',
+      content_text: `COD ${templateName} failed to send: ${detail}`,
+    })
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: `[COD failed] ${templateName}`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId)
+    throw err
+  }
 
   await db.from('messages').insert({
     conversation_id: conversationId,
