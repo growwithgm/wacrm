@@ -54,6 +54,14 @@ interface SyncProgress {
 
 // Live webhook status returned by GET /api/shopify/webhooks (source of truth
 // queried straight from Shopify, not our stored flag).
+interface WebhookEvent {
+  topic: string
+  status: string
+  hmac_valid: boolean
+  detail: string | null
+  created_at: string
+}
+
 interface WebhookStatus {
   expected_callback_url?: string
   subscriptions?: { topic: string; callbackUrl: string | null }[]
@@ -61,6 +69,7 @@ interface WebhookStatus {
   required_topics?: string[]
   all_present?: boolean
   error?: string
+  recent_events?: WebhookEvent[]
 }
 
 const WEBHOOK_REQUIRED_TOPICS = [
@@ -632,6 +641,50 @@ export function ShopifyConfig() {
                         </ul>
                       </div>
                     )}
+
+                    {/* Recent deliveries — proves whether Shopify is actually hitting
+                        the endpoint, and exactly where each delivery stopped. */}
+                    <div className="border-t border-border-soft pt-3">
+                      <p className="mb-1.5 font-heading text-[11.5px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                        Recent deliveries
+                      </p>
+                      {!webhookStatus?.recent_events || webhookStatus.recent_events.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No webhook deliveries received yet. If Shopify shows deliveries
+                          but none appear here, they aren&apos;t reaching this URL.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {webhookStatus.recent_events.slice(0, 8).map((ev, i) => {
+                            const ok = ev.status === 'processed'
+                            return (
+                              <li
+                                key={i}
+                                className="flex items-center justify-between gap-2 text-xs"
+                                title={ev.detail ?? ''}
+                              >
+                                <span className="flex items-center gap-2 truncate">
+                                  <span
+                                    className={
+                                      ok
+                                        ? 'inline-block size-1.5 shrink-0 rounded-full bg-primary'
+                                        : 'inline-block size-1.5 shrink-0 rounded-full bg-destructive'
+                                    }
+                                  />
+                                  <span className="font-mono text-foreground">{ev.topic}</span>
+                                  <span className={ok ? 'text-muted-foreground' : 'text-destructive'}>
+                                    {ev.status}
+                                  </span>
+                                </span>
+                                <span className="shrink-0 text-muted-foreground">
+                                  {formatTimestamp(ev.created_at)}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               )

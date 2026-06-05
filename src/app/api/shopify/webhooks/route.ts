@@ -56,6 +56,15 @@ export async function GET(request: Request) {
 
     const expectedCallbackUrl = shopifyWebhookCallbackUrl(request)
 
+    // Recent delivery log (service-role read, by shop) so even failure rows
+    // with no resolved user_id — invalid HMAC, unknown shop — are visible.
+    const { data: recentEvents } = await db()
+      .from('shopify_webhook_events')
+      .select('topic, status, hmac_valid, detail, created_at')
+      .eq('shop', config.store_domain)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
     let token: string
     try {
       token = await getValidToken(config as ShopifyConfigRow)
@@ -65,6 +74,7 @@ export async function GET(request: Request) {
         error: err instanceof Error ? err.message : 'Token error',
         expected_callback_url: expectedCallbackUrl,
         subscriptions: [],
+        recent_events: recentEvents ?? [],
       })
     }
 
@@ -81,6 +91,7 @@ export async function GET(request: Request) {
         registered_topics: registeredTopics,
         all_present: allPresent,
         webhooks_registered_at: config.webhooks_registered_at ?? null,
+        recent_events: recentEvents ?? [],
       })
     } catch (err) {
       return NextResponse.json({
@@ -88,6 +99,7 @@ export async function GET(request: Request) {
         error: err instanceof Error ? err.message : 'Failed to list webhooks',
         expected_callback_url: expectedCallbackUrl,
         subscriptions: [],
+        recent_events: recentEvents ?? [],
       })
     }
   } catch (error) {

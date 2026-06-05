@@ -23,60 +23,119 @@ function db(): any {
 }
 
 /**
+ * Append a row to the in-app webhook delivery log. Best-effort: logging must
+ * never change the response Shopify sees, so failures here are swallowed.
+ */
+async function logEvent(event: {
+  shop: string
+  topic: string
+  user_id: string | null
+  hmac_valid: boolean
+  status: string
+  detail: string | null
+}) {
+  try {
+    await db().from('shopify_webhook_events').insert(event)
+  } catch (err) {
+    console.error('[shopify/webhook] failed to write delivery log:', err)
+  }
+}
+
+/**
  * POST /api/shopify/webhook
  *
- * Single endpoint for every Shopify topic we subscribe to (registered in
- * the OAuth callback). Flow:
- *   1. Read the RAW body (HMAC is computed over exact bytes).
+ * Single endpoint for every Shopify topic we subscribe to. Flow:
+ *   1. Read the RAW body bytes (HMAC is over exact bytes).
  *   2. Verify the X-Shopify-Hmac-Sha256 signature with the app secret.
  *   3. Resolve the store → user via X-Shopify-Shop-Domain.
  *   4. Upsert based on X-Shopify-Topic.
  *
- * Returns 200 on success (and on safely-ignored topics). Returns 401 on a
- * bad signature, and 500 on an unexpected error so Shopify retries — every
- * write is an idempotent upsert, so retries are safe.
+ * Every outcome is logged to shopify_webhook_events (visible in the Shopify
+ * settings page) AND to the console, so it's clear whether a delivery
+ * arrived and where it stopped: delivery, HMAC, lookup, or save.
+ *
+ * 200 on success / safely-ignored; 401 on bad signature; 500 on a recoverable
+ * error so Shopify retries (every write is an idempotent upsert).
  */
 export async function POST(request: Request) {
+  const topic = request.headers.get('x-shopify-topic') ?? ''
+  const shopDomain = request.headers.get('x-shopify-shop-domain') ?? ''
+
   const secret = process.env.SHOPIFY_CLIENT_SECRET
   if (!secret) {
     console.error('[shopify/webhook] SHOPIFY_CLIENT_SECRET not set')
     return NextResponse.json({ error: 'not configured' }, { status: 503 })
   }
 
-  // 1. Raw body
-  const rawBody = await request.text()
+  // 1. Raw body bytes (do NOT re-encode — HMAC must match Shopify's exact bytes)
+  const rawBuf = Buffer.from(await request.arrayBuffer())
 
   // 2. HMAC
   const hmacHeader = request.headers.get('x-shopify-hmac-sha256')
-  if (!verifyShopifyWebhookHmac(rawBody, hmacHeader, secret)) {
-    console.warn('[shopify/webhook] HMAC verification failed')
+  const hmacValid = verifyShopifyWebhookHmac(rawBuf, hmacHeader, secret)
+
+  console.log('[shopify/webhook] hit', {
+    topic,
+    shop: shopDomain,
+    bytes: rawBuf.length,
+    hmacValid,
+  })
+
+  if (!hmacValid) {
+    await logEvent({
+      shop: shopDomain,
+      topic,
+      user_id: null,
+      hmac_valid: false,
+      status: 'invalid_hmac',
+      detail: hmacHeader ? 'signature mismatch' : 'missing hmac header',
+    })
     return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
   }
-
-  const topic = request.headers.get('x-shopify-topic') ?? ''
-  const shopDomain = request.headers.get('x-shopify-shop-domain') ?? ''
 
   if (!shopDomain) {
     return NextResponse.json({ error: 'missing shop domain' }, { status: 400 })
   }
 
   try {
-    // 3. Resolve store → user
-    const { data: config } = await db()
+    // 3. Resolve store → user. Capture the error (previously dropped) — a
+    // failing lookup here was silently acked as "unknown shop" with no save.
+    const { data: config, error: configErr } = await db()
       .from('shopify_config')
       .select('user_id, store_domain')
       .eq('store_domain', shopDomain)
       .maybeSingle()
 
+    if (configErr) {
+      console.error('[shopify/webhook] config lookup failed:', configErr)
+      await logEvent({
+        shop: shopDomain,
+        topic,
+        user_id: null,
+        hmac_valid: true,
+        status: 'config_error',
+        detail: configErr.message ?? 'config lookup failed',
+      })
+      // 500 → Shopify retries; transient DB issues self-heal.
+      return NextResponse.json({ error: 'config lookup failed' }, { status: 500 })
+    }
+
     if (!config?.user_id) {
-      // Unknown / disconnected store — ack so Shopify stops retrying.
       console.warn(`[shopify/webhook] No config for shop ${shopDomain} (topic ${topic})`)
+      await logEvent({
+        shop: shopDomain,
+        topic,
+        user_id: null,
+        hmac_valid: true,
+        status: 'ignored_unknown_shop',
+        detail: `no shopify_config row matches store_domain="${shopDomain}"`,
+      })
       return NextResponse.json({ ok: true, ignored: 'unknown_shop' })
     }
 
     const userId: string = config.user_id
     const storeDomain: string = config.store_domain ?? shopDomain
-    const payload = JSON.parse(rawBody)
+    const payload = JSON.parse(rawBuf.toString('utf8'))
 
     // 4. Dispatch
     switch (topic) {
@@ -98,13 +157,39 @@ export async function POST(request: Request) {
 
       default:
         console.warn(`[shopify/webhook] Unhandled topic: ${topic}`)
+        await logEvent({
+          shop: shopDomain,
+          topic,
+          user_id: userId,
+          hmac_valid: true,
+          status: 'ignored_topic',
+          detail: `no handler for topic "${topic}"`,
+        })
         return NextResponse.json({ ok: true, ignored: topic })
     }
 
+    await logEvent({
+      shop: shopDomain,
+      topic,
+      user_id: userId,
+      hmac_valid: true,
+      status: 'processed',
+      detail: null,
+    })
+    console.log('[shopify/webhook] processed', { topic, shop: shopDomain })
     return NextResponse.json({ ok: true, topic })
   } catch (err) {
     // 500 → Shopify retries with backoff; upserts are idempotent so this is safe.
+    const detail = err instanceof Error ? err.message : String(err)
     console.error(`[shopify/webhook] Error handling ${topic}:`, err)
+    await logEvent({
+      shop: shopDomain,
+      topic,
+      user_id: null,
+      hmac_valid: true,
+      status: 'error',
+      detail,
+    })
     return NextResponse.json({ error: 'processing failed' }, { status: 500 })
   }
 }
