@@ -363,13 +363,24 @@ export async function startCodConfirmation(
  */
 export async function handleCodReply(
   db: any,
-  args: { userId: string; contactId: string | null; text: string | null },
+  args: {
+    userId: string
+    contactId: string | null
+    text: string | null
+    /** Quick-reply button payload / interactive reply id, when the customer
+     *  tapped a button instead of typing. Matched as a fallback to `text`. */
+    replyId?: string | null
+  },
 ): Promise<void> {
   try {
-    const { userId, contactId, text } = args
+    const { userId, contactId, text, replyId } = args
     if (!contactId) return
 
-    const match = matchCodReply(text)
+    // Match the typed text first, then the button payload / interactive reply
+    // id — a template quick-reply "SÍ"/"NO" tap arrives with the title in
+    // content_text and the payload in interactive_reply_id. matchCodReply is
+    // accent/case-insensitive (SÍ/Sí/si/SI → yes).
+    const match = matchCodReply(text) ?? matchCodReply(replyId ?? null)
     if (!match) return // unrelated reply — leave pending, reminders continue
 
     const { data: conf } = await db
