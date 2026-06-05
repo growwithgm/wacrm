@@ -35,6 +35,14 @@ interface WhatsAppMessage {
   location?: { latitude: number; longitude: number; name?: string; address?: string }
   reaction?: { message_id: string; emoji: string }
   /**
+   * Set when the customer taps a quick-reply button on a TEMPLATE message
+   * we sent (e.g. the COD confirmation "SÍ"/"NO" buttons). Distinct from
+   * `interactive` below: Meta delivers template quick-replies as type
+   * `button` with the visible title in `text` and the developer-set payload
+   * in `payload`.
+   */
+  button?: { text?: string; payload?: string }
+  /**
    * Set when the customer taps a button or list row on an interactive
    * message we sent. `button_reply.id` / `list_reply.id` is whatever id
    * we put on the button/row when sending — the Flows engine uses this
@@ -591,8 +599,10 @@ async function processMessage(
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
     : message.type === 'sticker'
-      ? 'image'   // stickers are images
-      : 'text'    // reaction, unknown → text fallback
+      ? 'image'         // stickers are images
+      : message.type === 'button'
+        ? 'interactive' // template quick-reply button tap → interactive
+        : 'text'        // reaction, unknown → text fallback
 
   // Determine whether this is the contact's very first inbound message
   // BEFORE we insert, so the count is accurate. Covers the case where
@@ -739,6 +749,7 @@ async function processMessage(
       userId,
       contactId: contactRecord.id,
       text: inboundText,
+      replyId: interactiveReplyId,
     })
   } catch (err) {
     console.error('[cod] reply dispatch failed:', err)
@@ -862,6 +873,21 @@ async function parseMessageContent(
 
     case 'reaction':
       return { ...empty, contentText: message.reaction?.emoji || null }
+
+    case 'button': {
+      // Template quick-reply button tap (e.g. the COD "SÍ"/"NO" buttons).
+      // Meta delivers type `button` with { text: <visible title>, payload }.
+      // Capture the title as contentText so reply-matching (COD, keywords)
+      // can read "SÍ"/"NO", and the payload as the stable reply id. Falls
+      // back to the title when no payload is present.
+      const title = message.button?.text ?? null
+      const payload = message.button?.payload ?? null
+      return {
+        ...empty,
+        contentText: title,
+        interactiveReplyId: payload ?? title,
+      }
+    }
 
     case 'interactive': {
       // The customer tapped a reply button or a list row on a message
