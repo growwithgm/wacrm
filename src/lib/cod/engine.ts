@@ -19,7 +19,7 @@ import { addOrderTags, removeOrderTags } from '@/lib/shopify/tags'
 import { resolveOrderPhone, type RestOrder } from '@/lib/shopify/transform'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { sanitizePhoneForMeta, phonesMatch } from '@/lib/whatsapp/phone-utils'
+import { sanitizePhoneForMeta, phonesMatch, phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils'
 
 // ─── COD order detection ────────────────────────────────────────────────────
 
@@ -109,6 +109,7 @@ async function sendCodTemplate(
   db: any,
   userId: string,
   conversationId: string,
+  contactId: string | null,
   phone: string,
   templateName: string,
   language: string,
@@ -121,26 +122,44 @@ async function sendCodTemplate(
     .maybeSingle()
   if (!wa?.access_token) throw new Error('WhatsApp not configured')
 
-  const to = sanitizePhoneForMeta(phone)
-  console.log('[cod] sending template', { to, templateName, language, params })
+  const accessToken = decrypt(wa.access_token)
+  const sanitized = sanitizePhoneForMeta(phone)
+  // Same trunk-0 resilience as /api/whatsapp/send: try the with/without
+  // leading-zero variants, retrying ONLY on Meta's "recipient not in allowed
+  // list" rejection. Any other error is terminal.
+  const variants = phoneVariants(sanitized)
+  console.log('[cod] sending template', { to: sanitized, variants, templateName, language, params })
 
-  let result: { messageId: string }
-  try {
-    result = await sendTemplateMessage({
-      phoneNumberId: wa.phone_number_id,
-      accessToken: decrypt(wa.access_token),
-      to,
-      templateName,
-      language,
-      params,
-    })
-  } catch (err) {
-    // Surface the failure in the inbox instead of swallowing it: record a
-    // failed message in the conversation carrying Meta's exact error, so the
-    // conversation appears and the reason is visible without digging through
-    // Vercel logs. Re-throw so the caller doesn't mark the message as sent.
-    const detail = err instanceof Error ? err.message : String(err)
-    console.error('[cod] template send failed', { to, templateName, language, detail })
+  let result: { messageId: string } | null = null
+  let workingPhone = sanitized
+  let lastError: unknown = null
+
+  for (const variant of variants) {
+    try {
+      result = await sendTemplateMessage({
+        phoneNumberId: wa.phone_number_id,
+        accessToken,
+        to: variant,
+        templateName,
+        language,
+        params,
+      })
+      workingPhone = variant
+      lastError = null
+      break
+    } catch (err) {
+      lastError = err
+      const message = err instanceof Error ? err.message : String(err)
+      if (!isRecipientNotAllowedError(message)) break
+      console.warn(`[cod] variant "${variant}" rejected by Meta, trying next…`)
+    }
+  }
+
+  if (!result) {
+    // Every variant failed (or a terminal error). Surface it in the inbox with
+    // Meta's exact error instead of leaving an empty conversation, then re-throw.
+    const detail = lastError instanceof Error ? lastError.message : String(lastError)
+    console.error('[cod] template send failed', { phone: sanitized, templateName, language, detail })
     await db.from('messages').insert({
       conversation_id: conversationId,
       sender_type: 'bot',
@@ -157,7 +176,14 @@ async function sendCodTemplate(
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversationId)
-    throw err
+    throw lastError instanceof Error ? lastError : new Error(detail)
+  }
+
+  // A non-original variant worked — persist it so future sends (reminders,
+  // and other flows) go straight through on the first attempt.
+  if (workingPhone !== sanitized && contactId) {
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contactId)
+    console.log('[cod] auto-corrected contact phone', { from: sanitized, to: workingPhone })
   }
 
   await db.from('messages').insert({
@@ -278,6 +304,7 @@ export async function startCodConfirmation(
         db,
         userId,
         conversationId,
+        contactId,
         phone,
         config.cod_template_name,
         config.cod_template_language,
@@ -398,6 +425,7 @@ async function sendReminder(db: any, config: any, conf: any): Promise<void> {
     db,
     conf.user_id,
     conf.conversation_id,
+    conf.contact_id,
     conf.phone,
     config.cod_template_name,
     config.cod_template_language,
