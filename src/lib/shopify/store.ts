@@ -136,3 +136,92 @@ export async function applyFulfillmentEvent(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', orderRowId)
 }
+
+export interface CleanupCounts {
+  orders: number
+  checkouts: number
+  fulfillments: number
+  contacts: number
+  events: number
+}
+
+/**
+ * Remove all commerce data for one store (used by the app/uninstalled webhook
+ * and by manual Disconnect). Deletes orders, checkouts and fulfillments, clears
+ * the Shopify enrichment on contacts (the contacts + their conversations are
+ * kept — only the store linkage is removed), and clears the webhook delivery
+ * log for the shop. Idempotent. Uses the service-role client.
+ */
+export async function cleanupStoreData(
+  db: any,
+  userId: string,
+  storeDomain: string,
+): Promise<CleanupCounts> {
+  // Collect the store's Shopify order ids first so we can remove fulfillments
+  // (including any that arrived before their order, with a null order_id)
+  // before the orders — and the order delete cascades the rest.
+  const { data: orderRows } = await db
+    .from('shopify_orders')
+    .select('shopify_order_id')
+    .eq('user_id', userId)
+    .eq('store_domain', storeDomain)
+
+  const shopIds = (orderRows ?? [])
+    .map((o: { shopify_order_id: string | null }) => o.shopify_order_id)
+    .filter((x: string | null): x is string => !!x)
+
+  let fulfillments = 0
+  if (shopIds.length > 0) {
+    const { data } = await db
+      .from('shopify_fulfillments')
+      .delete()
+      .eq('user_id', userId)
+      .in('shopify_order_id', shopIds)
+      .select('id')
+    fulfillments = data?.length ?? 0
+  }
+
+  const { data: deletedOrders } = await db
+    .from('shopify_orders')
+    .delete()
+    .eq('user_id', userId)
+    .eq('store_domain', storeDomain)
+    .select('id')
+
+  const { data: deletedCheckouts } = await db
+    .from('shopify_checkouts')
+    .delete()
+    .eq('user_id', userId)
+    .eq('store_domain', storeDomain)
+    .select('id')
+
+  // Keep the contact + its conversations; only strip the Shopify linkage.
+  const { data: clearedContacts } = await db
+    .from('contacts')
+    .update({
+      shopify_customer_id: null,
+      shopify_store_domain: null,
+      shopify_total_orders: null,
+      shopify_total_spent: null,
+      shopify_currency: null,
+      shopify_last_order_at: null,
+      shopify_tags: null,
+    })
+    .eq('user_id', userId)
+    .eq('shopify_store_domain', storeDomain)
+    .select('id')
+
+  const { data: deletedEvents } = await db
+    .from('shopify_webhook_events')
+    .delete()
+    .eq('shop', storeDomain)
+    .select('id')
+
+  return {
+    orders: deletedOrders?.length ?? 0,
+    checkouts: deletedCheckouts?.length ?? 0,
+    fulfillments,
+    contacts: clearedContacts?.length ?? 0,
+    events: deletedEvents?.length ?? 0,
+  }
+}

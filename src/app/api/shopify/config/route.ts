@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidToken, shopifyGraphQL } from '@/lib/shopify/client'
+import { deleteWebhooks } from '@/lib/shopify/webhooks'
+import { cleanupStoreData } from '@/lib/shopify/store'
+import { shopifyWebhookCallbackUrl } from '@/lib/shopify/url'
 import type { ShopifyConfigRow } from '@/lib/shopify/client'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,9 +111,12 @@ export async function GET() {
 /**
  * DELETE /api/shopify/config
  *
- * Removes the Shopify connection for the authenticated user.
+ * Disconnect a store: remove this app's webhook subscriptions from Shopify
+ * (best-effort, while the token is still valid), purge the store's synced
+ * commerce data, and delete the connection row. Contacts + conversations are
+ * kept (only their Shopify enrichment is cleared).
  */
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
     const supabase = await createClient()
     const {
@@ -121,6 +127,38 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { data: config } = await supabase
+      .from('shopify_config')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!config) {
+      return NextResponse.json({ success: true })
+    }
+
+    const storeDomain: string = config.store_domain
+
+    // 1. Best-effort: remove our webhook subscriptions from Shopify so we don't
+    //    leave dangling subscriptions (token may already be invalid — ignore).
+    try {
+      const token = await getValidToken(config as ShopifyConfigRow)
+      const callbackUrl = shopifyWebhookCallbackUrl(request)
+      const { deleted } = await deleteWebhooks(storeDomain, token, callbackUrl)
+      console.log('[shopify/config DELETE] removed webhooks', { storeDomain, deleted })
+    } catch (err) {
+      console.warn('[shopify/config DELETE] webhook removal skipped:', err)
+    }
+
+    // 2. Purge synced commerce data (service role).
+    let removed
+    try {
+      removed = await cleanupStoreData(db(), user.id, storeDomain)
+    } catch (err) {
+      console.error('[shopify/config DELETE] data cleanup failed:', err)
+    }
+
+    // 3. Delete the connection row.
     const { error: deleteError } = await supabase
       .from('shopify_config')
       .delete()
@@ -130,7 +168,7 @@ export async function DELETE() {
       return NextResponse.json({ error: deleteError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, removed })
   } catch (error) {
     console.error('[shopify/config DELETE] Unexpected error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

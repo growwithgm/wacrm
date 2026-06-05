@@ -79,6 +79,7 @@ const WEBHOOK_REQUIRED_TOPICS = [
   'checkouts/update',
   'fulfillments/create',
   'fulfillments/update',
+  'app/uninstalled',
 ]
 
 function formatTimestamp(ts: string | null | undefined): string {
@@ -260,7 +261,7 @@ export function ShopifyConfig() {
   async function handleDisconnect() {
     if (
       !confirm(
-        'Disconnect your Shopify store? Synced customer data (contacts) will remain but Shopify fields will no longer update.',
+        'Disconnect this Shopify store? This unregisters its webhooks and removes the synced orders, abandoned checkouts and fulfillments, and clears the Shopify info on your contacts. Your contacts and conversations are kept. This cannot be undone.',
       )
     )
       return
