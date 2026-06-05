@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidToken, shopifyRest } from '@/lib/shopify/client'
 import { upsertOrder, upsertCheckout } from '@/lib/shopify/store'
+import { runCodTimers } from '@/lib/cod/engine'
 import type { ShopifyConfigRow } from '@/lib/shopify/client'
 import type { RestOrder, RestCheckout } from '@/lib/shopify/transform'
 
@@ -133,5 +134,15 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, stores, orders, checkouts, failures })
+  // COD reminder/no-reply sweep runs on the same schedule. Reminders fire at
+  // 24/48h and the no-reply tag at 72h, so a daily run advances each row by one
+  // step; the messages_sent guards make it safe to run more often too.
+  let cod = { processed: 0, reminders: 0, noReplies: 0 }
+  try {
+    cod = await runCodTimers(admin)
+  } catch (err) {
+    console.error('[shopify/cron] COD timers failed:', err)
+  }
+
+  return NextResponse.json({ ok: true, stores, orders, checkouts, cod, failures })
 }

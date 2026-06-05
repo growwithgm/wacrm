@@ -7,6 +7,7 @@ import {
   applyFulfillmentEvent,
   cleanupStoreData,
 } from '@/lib/shopify/store'
+import { isCodPendingOrder, startCodConfirmation } from '@/lib/cod/engine'
 import type { RestOrder, RestCheckout, RestFulfillment } from '@/lib/shopify/transform'
 
 // Node runtime — needs `crypto` for HMAC verification.
@@ -145,10 +146,19 @@ export async function POST(request: Request) {
     // 4. Dispatch
     switch (topic) {
       case 'orders/create':
-      case 'orders/updated':
+      case 'orders/updated': {
         // 'webhook' source — the ONLY path that marks a record automation-eligible.
-        await upsertOrder(db(), userId, storeDomain, payload as RestOrder, 'webhook')
+        const orderPayload = payload as RestOrder
+        const orderRowId = await upsertOrder(db(), userId, storeDomain, orderPayload, 'webhook')
+        // COD confirmation trigger. Reaching this code means the order arrived
+        // live via webhook (sync/cron never dispatch webhooks), so this is the
+        // only place COD can start — backfilled orders never enter the flow.
+        // startCodConfirmation is idempotent (one per order).
+        if (isCodPendingOrder(orderPayload)) {
+          await startCodConfirmation(db(), userId, storeDomain, orderPayload, orderRowId)
+        }
         break
+      }
 
       case 'checkouts/create':
       case 'checkouts/update':

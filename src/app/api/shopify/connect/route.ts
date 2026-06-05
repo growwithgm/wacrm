@@ -3,10 +3,11 @@ import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { isValidShopDomain } from '@/lib/shopify/hmac'
 
-// Phase A reads customers, orders, abandoned checkouts and fulfillments.
-// NOTE: widening scopes requires already-connected merchants to reconnect
-// before the new resources become readable.
-const SCOPES = 'read_customers,read_orders,read_checkouts,read_fulfillments'
+// Reads customers/orders/checkouts/fulfillments; write_orders is needed to
+// add/remove COD tags on orders.
+// NOTE: widening scopes requires already-connected merchants to RECONNECT
+// before the new permission takes effect (existing tokens keep old scopes).
+const SCOPES = 'read_customers,read_orders,read_checkouts,read_fulfillments,write_orders'
 
 /**
  * GET /api/shopify/connect?shop=mystore.myshopify.com

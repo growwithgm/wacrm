@@ -6,6 +6,7 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { handleCodReply } from '@/lib/cod/engine'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -727,6 +728,20 @@ async function processMessage(
         conversation_id: conversation.id,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
+  }
+
+  // COD confirmation reply matching. Awaited (not fire-and-forget) so the
+  // Shopify re-tagging completes before the webhook responds — Vercel can
+  // recycle the function the moment we return. No-op unless this contact has
+  // a pending COD confirmation and the message matches SÍ/NO.
+  try {
+    await handleCodReply(supabaseAdmin(), {
+      userId,
+      contactId: contactRecord.id,
+      text: inboundText,
+    })
+  } catch (err) {
+    console.error('[cod] reply dispatch failed:', err)
   }
 }
 

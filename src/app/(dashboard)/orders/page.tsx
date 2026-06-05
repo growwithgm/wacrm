@@ -80,6 +80,35 @@ function StatusPill({
   );
 }
 
+const COD_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  confirmed: 'Confirmed',
+  cancel_requested: 'Cancel req.',
+  no_reply: 'No reply',
+};
+
+function CodBadge({ status }: { status: string | null }) {
+  if (!status) return <span className="text-sm text-muted-foreground">—</span>;
+  const tone =
+    status === 'confirmed'
+      ? 'bg-primary/10 text-primary'
+      : status === 'pending'
+        ? 'bg-warning/10 text-warning'
+        : status === 'cancel_requested'
+          ? 'bg-destructive/10 text-destructive'
+          : 'bg-muted text-muted-foreground';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-bold',
+        tone,
+      )}
+    >
+      {COD_LABELS[status] ?? status}
+    </span>
+  );
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<ShopifyOrder[] | null>(null);
   const [search, setSearch] = useState('');
@@ -170,6 +199,7 @@ export default function OrdersPage() {
                 <TableHead>Total</TableHead>
                 <TableHead>Payment</TableHead>
                 <TableHead>Fulfillment</TableHead>
+                <TableHead>COD</TableHead>
                 <TableHead>Tracking</TableHead>
                 <TableHead className="text-right">Date</TableHead>
               </TableRow>
@@ -202,6 +232,9 @@ export default function OrdersPage() {
                       value={o.fulfillment_status}
                       fallback="unfulfilled"
                     />
+                  </TableCell>
+                  <TableCell>
+                    <CodBadge status={o.cod_status} />
                   </TableCell>
                   <TableCell>
                     {o.tracking_number ? (
