@@ -53,20 +53,18 @@ export function isValidShopDomain(shop: string): boolean {
  * webhook HMAC is the **base64** digest of the raw, unparsed request body
  * keyed with the app's client secret, delivered in the
  * `X-Shopify-Hmac-Sha256` header. The body MUST be the exact bytes Shopify
- * sent — re-serialising parsed JSON would change the signature — so callers
- * pass `await request.text()`.
+ * sent — so callers pass the raw Buffer (`Buffer.from(await request.arrayBuffer())`).
+ * A string is also accepted (encoded as UTF-8) for convenience.
  */
 export function verifyShopifyWebhookHmac(
-  rawBody: string,
+  rawBody: Buffer | string,
   hmacHeader: string | null,
   clientSecret: string,
 ): boolean {
   if (!hmacHeader) return false
 
-  const digest = crypto
-    .createHmac('sha256', clientSecret)
-    .update(rawBody, 'utf8')
-    .digest('base64')
+  const body = typeof rawBody === 'string' ? Buffer.from(rawBody, 'utf8') : rawBody
+  const digest = crypto.createHmac('sha256', clientSecret).update(body).digest('base64')
 
   try {
     const a = Buffer.from(digest)
