@@ -10,6 +10,10 @@ import type { RestOrder } from '@/lib/shopify/transform'
 // several DB writes — 25/page keeps a call comfortably under the 10s budget.
 const PAGE_SIZE = 25
 
+// Priority 4: backfill only the recent window — live webhooks own everything
+// after that. Already-synced older rows are left untouched.
+const BACKFILL_WINDOW_DAYS = 30
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _admin: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,11 +71,15 @@ export async function POST(request: Request) {
       )
     }
 
-    // First page filters to all statuses; subsequent pages must use only
-    // limit + page_info (Shopify rejects other filters alongside a cursor).
+    // First page filters to all statuses within the backfill window;
+    // subsequent pages must use only limit + page_info (Shopify rejects other
+    // filters alongside a cursor — but the cursor preserves the window).
+    const createdMin = new Date(
+      Date.now() - BACKFILL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString()
     const path = cursor
       ? `orders.json?limit=${PAGE_SIZE}&page_info=${encodeURIComponent(cursor)}`
-      : `orders.json?status=any&limit=${PAGE_SIZE}`
+      : `orders.json?status=any&limit=${PAGE_SIZE}&created_at_min=${encodeURIComponent(createdMin)}`
 
     let result: Awaited<ReturnType<typeof shopifyRest<{ orders: RestOrder[] }>>>
     try {
@@ -87,7 +95,8 @@ export async function POST(request: Request) {
     let errors = 0
     for (const order of orders) {
       try {
-        await upsertOrder(db(), user.id, config.store_domain, order)
+        // 'backfill' source — display only, never automation-eligible.
+        await upsertOrder(db(), user.id, config.store_domain, order, 'backfill')
       } catch (err) {
         console.error('[shopify/sync/orders] upsert error:', err)
         errors++

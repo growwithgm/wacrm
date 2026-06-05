@@ -52,6 +52,26 @@ interface SyncProgress {
   errors: number
 }
 
+// Live webhook status returned by GET /api/shopify/webhooks (source of truth
+// queried straight from Shopify, not our stored flag).
+interface WebhookStatus {
+  expected_callback_url?: string
+  subscriptions?: { topic: string; callbackUrl: string | null }[]
+  registered_topics?: string[]
+  required_topics?: string[]
+  all_present?: boolean
+  error?: string
+}
+
+const WEBHOOK_REQUIRED_TOPICS = [
+  'orders/create',
+  'orders/updated',
+  'checkouts/create',
+  'checkouts/update',
+  'fulfillments/create',
+  'fulfillments/update',
+]
+
 function formatTimestamp(ts: string | null | undefined): string {
   if (!ts) return 'Never'
   try {
@@ -94,8 +114,47 @@ export function ShopifyConfig() {
   const [orderSync, setOrderSync] = useState<SyncProgress>(emptyProgress)
   const [checkoutSync, setCheckoutSync] = useState<SyncProgress>(emptyProgress)
 
+  // Webhook status (live from Shopify) + manual registration state
+  const [webhookStatus, setWebhookStatus] = useState<WebhookStatus | null>(null)
+  const [webhookBusy, setWebhookBusy] = useState(false)
+  const [webhookErrors, setWebhookErrors] = useState<{ topic: string; error: string }[]>([])
+
   // Only load config once per user (same pattern as WhatsAppConfig)
   const fetchedForRef = useRef<string | null>(null)
+
+  const fetchWebhookStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/shopify/webhooks')
+      const data = await res.json()
+      setWebhookStatus(data)
+    } catch {
+      // Non-fatal — the card just falls back to "register" guidance.
+    }
+  }, [])
+
+  const handleRegisterWebhooks = useCallback(async () => {
+    setWebhookBusy(true)
+    setWebhookErrors([])
+    try {
+      const res = await fetch('/api/shopify/webhooks', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error ?? 'Webhook registration failed')
+      } else if (Array.isArray(data.failed) && data.failed.length > 0) {
+        setWebhookErrors(data.failed)
+        toast.warning(
+          `${data.registered?.length ?? 0} registered, ${data.failed.length} failed — see details below`,
+        )
+      } else {
+        toast.success(`Webhooks registered — ${data.registered?.length ?? 0} topics`)
+      }
+      await fetchWebhookStatus()
+    } catch {
+      toast.error('Webhook registration failed — network error')
+    } finally {
+      setWebhookBusy(false)
+    }
+  }, [fetchWebhookStatus])
 
   // ── Load config ─────────────────────────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
@@ -154,6 +213,12 @@ export function ShopifyConfig() {
     fetchedForRef.current = user.id
     fetchConfig()
   }, [authLoading, user, fetchConfig])
+
+  // Pull live webhook status once the store is confirmed connected.
+  useEffect(() => {
+    if (config?.connected) fetchWebhookStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.connected])
 
   // ── Handle error from OAuth callback URL ─────────────────────────────────
   useEffect(() => {
@@ -222,7 +287,6 @@ export function ShopifyConfig() {
 
     try {
       while (true) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pageRes: Response = await fetch('/api/shopify/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -356,25 +420,19 @@ export function ShopifyConfig() {
         <div
           className={
             isConnected
-              ? 'rounded-xl border border-green-500 bg-green-900/50 p-4'
-              : 'rounded-xl border border-red-500 bg-red-900/50 p-4'
+              ? 'rounded-xl border border-primary/30 bg-primary/10 p-4'
+              : 'rounded-xl border border-destructive/30 bg-destructive/10 p-4'
           }
         >
           <div className="flex items-start gap-3">
             {isConnected ? (
-              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-green-400" />
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
             ) : (
-              <XCircle className="mt-0.5 size-5 shrink-0 text-red-400" />
+              <XCircle className="mt-0.5 size-5 shrink-0 text-destructive" />
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <p
-                  className={
-                    isConnected
-                      ? 'font-semibold text-green-200'
-                      : 'font-semibold text-red-200'
-                  }
-                >
+                <p className="font-heading font-bold text-foreground">
                   {isConnected
                     ? `Connected — Store: ${config?.shop_name ?? config?.store_domain}`
                     : 'Not Connected'}
@@ -384,13 +442,13 @@ export function ShopifyConfig() {
                 )}
               </div>
               {!isConnected && (
-                <p className="mt-1 text-sm text-red-300/80">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {config?.message ??
                     'Connect your Shopify store using the form below.'}
                 </p>
               )}
               {isConnected && config?.plan && (
-                <p className="mt-1 text-xs text-green-300/70">Plan: {config.plan}</p>
+                <p className="mt-1 text-xs font-semibold text-primary">Plan: {config.plan}</p>
               )}
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Last synced:{' '}
@@ -476,34 +534,108 @@ export function ShopifyConfig() {
               </CardContent>
             </Card>
 
-            {/* Webhook status */}
-            <Card className="bg-card border-border">
-              <CardContent className="pt-5">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={
-                      config?.webhooks_registered_at
-                        ? 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary'
-                        : 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground'
-                    }
-                  >
-                    <Webhook className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      {config?.webhooks_registered_at
-                        ? 'Webhooks active'
-                        : 'Webhooks not registered'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {config?.webhooks_registered_at
-                        ? `${config.webhook_topics?.length ?? 0} topics (orders, checkouts, fulfillments) · since ${formatTimestamp(config.webhooks_registered_at)}`
-                        : 'Order / checkout / fulfillment events register automatically on connect — but only from a public HTTPS deployment. Reconnect from production to enable.'}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Webhook status — live from Shopify */}
+            {(() => {
+              const liveTopics = webhookStatus?.registered_topics ?? []
+              const requiredTopics = webhookStatus?.required_topics ?? WEBHOOK_REQUIRED_TOPICS
+              const allPresent = webhookStatus?.all_present ?? false
+              const somePresent = liveTopics.length > 0
+              return (
+                <Card className="bg-card border-border">
+                  <CardContent className="space-y-3 pt-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={
+                            allPresent
+                              ? 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary'
+                              : 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground'
+                          }
+                        >
+                          <Webhook className="size-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            {allPresent
+                              ? 'Webhooks active'
+                              : somePresent
+                                ? 'Webhooks partially registered'
+                                : 'Webhooks not registered'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {liveTopics.length}/{requiredTopics.length} live topics · order /
+                            checkout / fulfillment events
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRegisterWebhooks}
+                        disabled={webhookBusy}
+                        className="border-border text-foreground hover:bg-muted"
+                      >
+                        {webhookBusy ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        Register Webhooks
+                      </Button>
+                    </div>
+
+                    {/* Callback URL Shopify will deliver to (verify it's your prod https URL) */}
+                    {webhookStatus?.expected_callback_url && (
+                      <div className="rounded-lg bg-muted px-3 py-2 text-xs">
+                        <span className="text-muted-foreground">Callback URL: </span>
+                        <span className="font-mono break-all text-foreground">
+                          {webhookStatus.expected_callback_url}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Per-topic live status */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {requiredTopics.map((t) => {
+                        const on = liveTopics.includes(t)
+                        return (
+                          <span
+                            key={t}
+                            className={
+                              on
+                                ? 'inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary'
+                                : 'inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground'
+                            }
+                          >
+                            {on ? '✓ ' : ''}
+                            {t}
+                          </span>
+                        )
+                      })}
+                    </div>
+
+                    {/* Live status error (e.g. token/permission issue listing webhooks) */}
+                    {webhookStatus?.error && (
+                      <p className="text-xs text-destructive">Shopify: {webhookStatus.error}</p>
+                    )}
+
+                    {/* Verbatim per-topic errors from the last registration attempt */}
+                    {webhookErrors.length > 0 && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs">
+                        <p className="font-semibold text-destructive">Registration errors</p>
+                        <ul className="mt-1 space-y-0.5">
+                          {webhookErrors.map((e) => (
+                            <li key={e.topic} className="text-destructive/90">
+                              <span className="font-mono">{e.topic}</span>: {e.error}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })()}
 
             {/* Sync progress / result */}
             {(sync.running || sync.total_processed > 0) && (

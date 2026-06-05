@@ -30,13 +30,20 @@ export async function upsertOrder(
   userId: string,
   storeDomain: string | null,
   order: RestOrder,
+  source: 'webhook' | 'backfill',
 ): Promise<string | null> {
   const row = mapOrder(order, { userId, storeDomain })
   const contact_id = await resolveContactId(db, userId, row.customer_phone, row.customer_email)
 
+  // Only stamp `source` on the live (webhook) path. Backfill omits it so an
+  // INSERT takes the DB default ('backfill') and a row that's already
+  // 'webhook' is never downgraded back to 'backfill' on conflict.
+  const payload: Record<string, unknown> = { ...row, contact_id }
+  if (source === 'webhook') payload.source = 'webhook'
+
   const { data, error } = await db
     .from('shopify_orders')
-    .upsert({ ...row, contact_id }, { onConflict: 'user_id,shopify_order_id' })
+    .upsert(payload, { onConflict: 'user_id,shopify_order_id' })
     .select('id')
     .maybeSingle()
 
@@ -60,13 +67,18 @@ export async function upsertCheckout(
   userId: string,
   storeDomain: string | null,
   checkout: RestCheckout,
+  source: 'webhook' | 'backfill',
 ): Promise<void> {
   const row = mapCheckout(checkout, { userId, storeDomain })
   const contact_id = await resolveContactId(db, userId, row.customer_phone, row.customer_email)
 
+  // See upsertOrder: backfill must never downgrade a live ('webhook') record.
+  const payload: Record<string, unknown> = { ...row, contact_id }
+  if (source === 'webhook') payload.source = 'webhook'
+
   const { error } = await db
     .from('shopify_checkouts')
-    .upsert({ ...row, contact_id }, { onConflict: 'user_id,shopify_checkout_id' })
+    .upsert(payload, { onConflict: 'user_id,shopify_checkout_id' })
 
   if (error) throw new Error(`checkout upsert failed: ${error.message}`)
 }

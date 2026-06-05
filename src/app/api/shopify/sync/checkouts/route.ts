@@ -8,6 +8,9 @@ import type { RestCheckout } from '@/lib/shopify/transform'
 
 const PAGE_SIZE = 50
 
+// Priority 4: backfill only the recent window (live webhooks own newer carts).
+const BACKFILL_WINDOW_DAYS = 30
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _admin: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,9 +69,12 @@ export async function POST(request: Request) {
       )
     }
 
+    const createdMin = new Date(
+      Date.now() - BACKFILL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString()
     const path = cursor
       ? `checkouts.json?limit=${PAGE_SIZE}&page_info=${encodeURIComponent(cursor)}`
-      : `checkouts.json?limit=${PAGE_SIZE}`
+      : `checkouts.json?limit=${PAGE_SIZE}&created_at_min=${encodeURIComponent(createdMin)}`
 
     let result: Awaited<ReturnType<typeof shopifyRest<{ checkouts: RestCheckout[] }>>>
     try {
@@ -84,7 +90,8 @@ export async function POST(request: Request) {
     let errors = 0
     for (const checkout of checkouts) {
       try {
-        await upsertCheckout(db(), user.id, config.store_domain, checkout)
+        // 'backfill' source — display only, never automation-eligible.
+        await upsertCheckout(db(), user.id, config.store_domain, checkout, 'backfill')
       } catch (err) {
         console.error('[shopify/sync/checkouts] upsert error:', err)
         errors++
