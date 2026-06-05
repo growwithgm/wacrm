@@ -20,7 +20,7 @@ import { resolveOrderPhone, type RestOrder } from '@/lib/shopify/transform'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, phonesMatch, phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils'
-import { resolveTemplateLanguage } from '@/lib/whatsapp/templates'
+import { resolveTemplate } from '@/lib/whatsapp/templates'
 
 // ─── COD order detection ────────────────────────────────────────────────────
 
@@ -125,19 +125,26 @@ async function sendCodTemplate(
 
   const accessToken = decrypt(wa.access_token)
 
-  // Resolve the Meta-approved language code EXACTLY like /api/whatsapp/send:
-  // the language synced from Meta into message_templates is guaranteed to match
-  // an approved translation. The shopify_config default ('es') can mismatch
-  // Meta's real code (e.g. 'es_ES') and trigger #132001 "Template name does not
-  // exist in the translation". Honor the config language only if Meta has it;
-  // otherwise use the synced code; fall back to the config value if unsynced.
-  const effectiveLanguage =
-    (await resolveTemplateLanguage(db, userId, templateName, language)) ?? language
-  if (effectiveLanguage !== language) {
-    console.warn('[cod] language corrected from config', {
+  // Resolve the EXACT name + language Meta approved, from the synced
+  // message_templates — never trust the shopify_config values verbatim. Both a
+  // drifted name (config `cod_confermation_1` vs approved `cod_confermation_1_`)
+  // and a stale language code trigger #132001. resolveTemplate matches the
+  // config name exactly, then normalized (trailing "_"/whitespace/case), so a
+  // single character of drift can't break the send again.
+  const resolved = await resolveTemplate(db, userId, templateName, language)
+  const effectiveName = resolved.name
+  const effectiveLanguage = resolved.language ?? language
+  if (!resolved.matched) {
+    console.warn('[cod] template not found in synced message_templates — sending config values as-is', {
       templateName,
-      config: language,
-      approved: effectiveLanguage,
+      language,
+    })
+  } else if (effectiveName !== templateName || effectiveLanguage !== language) {
+    console.warn('[cod] corrected template from config to synced Meta values', {
+      configName: templateName,
+      configLanguage: language,
+      approvedName: effectiveName,
+      approvedLanguage: effectiveLanguage,
     })
   }
 
@@ -149,7 +156,7 @@ async function sendCodTemplate(
   console.log('[cod] sending template', {
     to: sanitized,
     variants,
-    templateName,
+    name: effectiveName,
     language: effectiveLanguage,
     params,
   })
@@ -164,7 +171,7 @@ async function sendCodTemplate(
         phoneNumberId: wa.phone_number_id,
         accessToken,
         to: variant,
-        templateName,
+        templateName: effectiveName,
         language: effectiveLanguage,
         params,
       })
@@ -183,19 +190,19 @@ async function sendCodTemplate(
     // Every variant failed (or a terminal error). Surface it in the inbox with
     // Meta's exact error instead of leaving an empty conversation, then re-throw.
     const detail = lastError instanceof Error ? lastError.message : String(lastError)
-    console.error('[cod] template send failed', { phone: sanitized, templateName, language: effectiveLanguage, detail })
+    console.error('[cod] template send failed', { phone: sanitized, name: effectiveName, language: effectiveLanguage, detail })
     await db.from('messages').insert({
       conversation_id: conversationId,
       sender_type: 'bot',
       content_type: 'template',
-      template_name: templateName,
+      template_name: effectiveName,
       status: 'failed',
-      content_text: `COD ${templateName} failed to send: ${detail}`,
+      content_text: `COD ${effectiveName} failed to send: ${detail}`,
     })
     await db
       .from('conversations')
       .update({
-        last_message_text: `[COD failed] ${templateName}`,
+        last_message_text: `[COD failed] ${effectiveName}`,
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -214,14 +221,14 @@ async function sendCodTemplate(
     conversation_id: conversationId,
     sender_type: 'bot',
     content_type: 'template',
-    template_name: templateName,
+    template_name: effectiveName,
     message_id: result.messageId,
     status: 'sent',
   })
   await db
     .from('conversations')
     .update({
-      last_message_text: `[COD] ${templateName}`,
+      last_message_text: `[COD] ${effectiveName}`,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
