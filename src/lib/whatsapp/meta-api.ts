@@ -194,6 +194,11 @@ export async function sendTemplateMessage(
     body.context = { message_id: contextMessageId }
   }
 
+  // Log the exact template payload we send Meta. The #1 template-send bug is
+  // a name/language mismatch (Meta #132001 "Template name does not exist in
+  // the translation") — this makes the name + language.code visible.
+  console.log('[meta-api] sendTemplate payload:', JSON.stringify(template))
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
