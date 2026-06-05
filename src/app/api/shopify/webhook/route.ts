@@ -82,12 +82,13 @@ export async function POST(request: Request) {
     switch (topic) {
       case 'orders/create':
       case 'orders/updated':
-        await upsertOrder(db(), userId, storeDomain, payload as RestOrder)
+        // 'webhook' source — the ONLY path that marks a record automation-eligible.
+        await upsertOrder(db(), userId, storeDomain, payload as RestOrder, 'webhook')
         break
 
       case 'checkouts/create':
       case 'checkouts/update':
-        await upsertCheckout(db(), userId, storeDomain, payload as RestCheckout)
+        await upsertCheckout(db(), userId, storeDomain, payload as RestCheckout, 'webhook')
         break
 
       case 'fulfillments/create':
