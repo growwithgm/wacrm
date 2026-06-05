@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       content_text,
       media_url,
       template_name,
+      template_language,
       template_params,
       reply_to_message_id,
     } = body
@@ -169,6 +170,33 @@ export async function POST(request: Request) {
       }
     }
 
+    // Resolve the template's language code. The Meta default was always
+    // "en_US", which fails with #132001 ("Template name does not exist in the
+    // translation") for a template approved only in another language (e.g. a
+    // Spanish-only COD template). Prefer the caller-supplied code; otherwise
+    // use the language synced from Meta into message_templates, which is
+    // guaranteed to match an approved translation.
+    let templateLanguage: string | undefined = template_language
+    if (message_type === 'template' && !templateLanguage && template_name) {
+      const { data: tpl } = await supabase
+        .from('message_templates')
+        .select('language')
+        .eq('user_id', user.id)
+        .eq('name', template_name)
+        .not('language', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      templateLanguage = tpl?.language ?? undefined
+    }
+    if (message_type === 'template') {
+      console.log('[whatsapp/send] template send', {
+        name: template_name,
+        language: templateLanguage ?? '(no match — falling back to en_US)',
+        params: template_params ?? [],
+      })
+    }
+
     // Send via Meta API — retry with phone-number variants if Meta rejects
     // with "recipient not in allowed list" (common in sandbox / when a
     // number was registered with/without a trunk 0). If an alternate
@@ -184,6 +212,7 @@ export async function POST(request: Request) {
           accessToken,
           to: phone,
           templateName: template_name,
+          language: templateLanguage,
           params: template_params || [],
           contextMessageId,
         })

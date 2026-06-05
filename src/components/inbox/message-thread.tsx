@@ -516,6 +516,7 @@ export function MessageThread({
             conversation_id: conversation.id,
             message_type: "template",
             template_name: template.name,
+            template_language: template.language,
             template_params: params,
             content_text: renderedBody,
           }),
