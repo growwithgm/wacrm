@@ -451,6 +451,7 @@ export interface ShopifyOrder {
   fulfilled_at: string | null;
   order_created_at: string | null;
   cancelled_at: string | null;
+  cod_status: 'pending' | 'confirmed' | 'cancel_requested' | 'no_reply' | null;
   created_at: string;
   updated_at: string;
 }
