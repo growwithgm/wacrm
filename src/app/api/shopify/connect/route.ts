@@ -3,7 +3,10 @@ import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { isValidShopDomain } from '@/lib/shopify/hmac'
 
-const SCOPES = 'read_customers,read_orders'
+// Phase A reads customers, orders, abandoned checkouts and fulfillments.
+// NOTE: widening scopes requires already-connected merchants to reconnect
+// before the new resources become readable.
+const SCOPES = 'read_customers,read_orders,read_checkouts,read_fulfillments'
 
 /**
  * GET /api/shopify/connect?shop=mystore.myshopify.com

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -20,10 +19,11 @@ import {
   User,
   X,
   ShieldCheck,
-  ArrowRight,
   ChevronDown,
   FileText,
   ShoppingCart,
+  ShoppingBag,
+  Store,
   Tag,
 } from "lucide-react";
 import {
@@ -46,19 +46,63 @@ interface NavItem {
   beta?: boolean;
 }
 
+// Labels follow the approved "Wasify 2" design (Dashboard→Overview,
+// Broadcasts→Campaigns). Every existing route is kept so no feature is
+// orphaned — Pipelines and Tags sit alongside the design's nav.
 const navItems: NavItem[] = [
-  { href: "/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/inbox",      label: "Inbox",      icon: MessageSquare },
-  { href: "/contacts",   label: "Contacts",   icon: Users },
-  { href: "/pipelines",  label: "Pipelines",  icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations",label: "Automations",icon: Zap },
-  { href: "/flows",      label: "Flows",      icon: Workflow, beta: true },
-  { href: "/templates",  label: "Templates",  icon: FileText },
-  { href: "/shopify",    label: "Shopify",    icon: ShoppingCart },
-  { href: "/tags",       label: "Tags",       icon: Tag },
-  { href: "/settings",   label: "Settings",   icon: Settings },
+  { href: "/dashboard",       label: "Overview",        icon: LayoutDashboard },
+  { href: "/inbox",           label: "Inbox",           icon: MessageSquare },
+  { href: "/broadcasts",      label: "Campaigns",       icon: Radio },
+  { href: "/contacts",        label: "Contacts",        icon: Users },
+  { href: "/orders",          label: "Orders",          icon: ShoppingBag },
+  { href: "/abandoned-carts", label: "Abandoned Carts", icon: ShoppingCart },
+  { href: "/pipelines",       label: "Pipelines",       icon: GitBranch },
+  { href: "/automations",     label: "Automations",     icon: Zap },
+  { href: "/flows",           label: "Flows",           icon: Workflow, beta: true },
+  { href: "/shopify",         label: "Shopify",         icon: Store },
+  { href: "/templates",       label: "Templates",       icon: FileText },
+  { href: "/tags",            label: "Tags",            icon: Tag },
+  { href: "/settings",        label: "Settings",        icon: Settings },
 ];
+
+// Wasify brand mark — green outlined speech bubble with a bold "W" and the
+// automation-node accent, recreated as crisp SVG (per the "Wasify 2" design)
+// so it stays sharp at any size on the dark-green sidebar.
+function WasifyMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 36 36"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M28 6 H8 A4 4 0 0 0 4 10 V22 A4 4 0 0 0 8 26 H11 V31 L17 26 H28 A4 4 0 0 0 32 22 V10 A4 4 0 0 0 28 6 Z"
+        stroke="#22C55E"
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11 12 L14 21 L18 15 L22 21 L25 12"
+        stroke="#22C55E"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line
+        x1="25.5"
+        y1="11"
+        x2="28"
+        y2="8.6"
+        stroke="#22C55E"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <circle cx="25.5" cy="11" r="1.1" fill="#22C55E" />
+      <circle cx="28" cy="8.6" r="1.4" fill="#22C55E" />
+    </svg>
+  );
+}
 
 interface SidebarProps {
   open?: boolean;
@@ -106,24 +150,21 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col bg-sidebar p-5 text-sidebar-foreground",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col bg-sidebar px-4 py-5 text-sidebar-foreground",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
-          "lg:static lg:z-0 lg:w-64 lg:translate-x-0 lg:transition-none",
+          // 240px fixed rail on desktop, per the Wasify 2 spec.
+          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
         )}
         aria-label="Primary"
       >
-        {/* Logo row */}
-        <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center">
-            <Image
-              src="/logo.png"
-              alt="Wasify"
-              height={36}
-              width={160}
-              className="object-contain"
-              priority
-            />
+        {/* Logo row — green mark + wordmark */}
+        <div className="flex items-center justify-between px-1.5">
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <WasifyMark className="h-[34px] w-[34px] shrink-0" />
+            <span className="font-heading text-xl font-extrabold tracking-tight text-white">
+              Wasify
+            </span>
           </Link>
           <button
             type="button"
@@ -136,7 +177,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </div>
 
         {/* Main navigation */}
-        <nav className="mt-8 flex-1 overflow-y-auto space-y-1.5">
+        <nav className="mt-7 flex-1 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive =
               pathname === item.href ||
@@ -150,29 +191,28 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition",
+                  "flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 font-heading text-sm font-bold transition",
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                    : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                    ? "bg-primary text-primary-foreground shadow-[0_6px_16px_rgba(22,163,74,0.32)]"
+                    : "text-sidebar-foreground/60 hover:bg-white/[0.06] hover:text-sidebar-foreground",
                 )}
               >
-                <span className="flex items-center gap-3">
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </span>
+                <item.icon className="h-[18px] w-[18px] shrink-0" />
+                <span className="flex-1 truncate">{item.label}</span>
                 {item.beta && (
-                  <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sidebar-primary">
+                  <span className="rounded-full bg-primary-soft-2 px-1.5 py-0.5 text-[9.5px] font-extrabold uppercase tracking-wide text-sidebar-primary">
                     Beta
                   </span>
                 )}
-                {showUnreadBadge && !isActive && (
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sidebar-primary opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-sidebar-primary" />
-                  </span>
-                )}
-                {showUnreadBadge && isActive && (
-                  <span className="rounded-full bg-sidebar-foreground/20 px-2 py-0.5 text-[10px] font-black text-sidebar-foreground">
+                {showUnreadBadge && (
+                  <span
+                    className={cn(
+                      "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold",
+                      isActive
+                        ? "bg-white/25 text-white"
+                        : "bg-sidebar-primary text-sidebar",
+                    )}
+                  >
                     {totalUnread}
                   </span>
                 )}
@@ -182,28 +222,27 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </nav>
 
         {/* API status card */}
-        <div className="mt-4 rounded-3xl border border-sidebar-border bg-sidebar-foreground/5 p-4">
+        <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/20 text-sidebar-primary">
-              <ShieldCheck className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-soft-2 text-sidebar-primary">
+              <ShieldCheck className="h-[18px] w-[18px]" />
             </div>
-            <div>
-              <p className="text-sm font-black">API status</p>
-              <p className="text-xs text-sidebar-foreground/55">All systems live</p>
+            <div className="min-w-0">
+              <p className="font-heading text-[13px] font-extrabold text-white">
+                API status
+              </p>
+              <p className="flex items-center gap-1.5 text-[11.5px] text-white/50">
+                <span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
+                All systems live
+              </p>
             </div>
           </div>
-          <Link
-            href="/settings?tab=whatsapp"
-            className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-sidebar-border bg-sidebar-foreground/5 text-sm font-bold text-sidebar-foreground transition hover:bg-sidebar-foreground/10"
-          >
-            View config <ArrowRight className="h-4 w-4" />
-          </Link>
         </div>
 
         {/* User section */}
-        <div className="mt-3 shrink-0">
+        <div className="mt-2.5 shrink-0">
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent focus:bg-sidebar-accent focus:outline-none data-popup-open:bg-sidebar-accent">
+            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none data-popup-open:bg-white/[0.06]">
               <Avatar className="size-9 shrink-0">
                 {profile?.avatar_url ? (
                   <AvatarImage
@@ -211,17 +250,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     alt={profile.full_name ?? "Avatar"}
                   />
                 ) : null}
-                <AvatarFallback className="bg-sidebar-primary/20 text-sm font-black text-sidebar-primary">
+                <AvatarFallback className="bg-sidebar-primary/20 font-heading text-sm font-extrabold text-sidebar-primary">
                   {profile?.full_name?.charAt(0)?.toUpperCase() ??
                     profile?.email?.charAt(0)?.toUpperCase() ??
                     "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-white">
+                <p className="truncate font-heading text-[13.5px] font-extrabold text-white">
                   {profile?.full_name ?? "User"}
                 </p>
-                <p className="truncate text-xs text-white/55">
+                <p className="truncate text-[11.5px] text-white/50">
                   {profile?.email ?? ""}
                 </p>
               </div>

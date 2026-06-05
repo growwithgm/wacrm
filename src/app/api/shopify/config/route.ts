@@ -79,6 +79,8 @@ export async function GET() {
         store_domain: config.store_domain,
         last_synced_at: config.last_synced_at,
         plan: info.data.shop.plan?.displayName ?? null,
+        webhooks_registered_at: config.webhooks_registered_at ?? null,
+        webhook_topics: config.webhook_topics ?? [],
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'

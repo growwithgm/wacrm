@@ -45,3 +45,34 @@ export function verifyShopifyCallbackHmac(
 export function isValidShopDomain(shop: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/.test(shop)
 }
+
+/**
+ * Verify the HMAC Shopify attaches to webhook deliveries.
+ *
+ * Unlike the OAuth callback HMAC (hex digest over sorted query params),
+ * webhook HMAC is the **base64** digest of the raw, unparsed request body
+ * keyed with the app's client secret, delivered in the
+ * `X-Shopify-Hmac-Sha256` header. The body MUST be the exact bytes Shopify
+ * sent — re-serialising parsed JSON would change the signature — so callers
+ * pass `await request.text()`.
+ */
+export function verifyShopifyWebhookHmac(
+  rawBody: string,
+  hmacHeader: string | null,
+  clientSecret: string,
+): boolean {
+  if (!hmacHeader) return false
+
+  const digest = crypto
+    .createHmac('sha256', clientSecret)
+    .update(rawBody, 'utf8')
+    .digest('base64')
+
+  try {
+    const a = Buffer.from(digest)
+    const b = Buffer.from(hmacHeader)
+    return a.length === b.length && crypto.timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}

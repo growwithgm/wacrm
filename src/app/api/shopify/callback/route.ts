@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { verifyShopifyCallbackHmac, isValidShopDomain } from '@/lib/shopify/hmac'
 import { exchangeCodeForToken, shopifyGraphQL } from '@/lib/shopify/client'
+import { registerWebhooks } from '@/lib/shopify/webhooks'
 
 // Lazy-initialized to avoid build-time crash when env vars are absent.
 // Typed as `any` so Supabase's generated-type checks don't reject tables
@@ -125,6 +126,32 @@ export async function GET(request: Request) {
       await db()
         .from('shopify_config')
         .insert({ user_id: userId, ...upsertPayload })
+    }
+
+    // ── 5b. Auto-register webhooks (best-effort) ────────────────────────────
+    // Requires a public HTTPS callback — Shopify rejects http/localhost, so
+    // this no-ops in local dev. Failures are logged, never fatal: the merchant
+    // is still connected and can sync manually.
+    try {
+      const callbackUrl = `${origin}/api/shopify/webhook`
+      const { registered, failed } = await registerWebhooks(
+        shop,
+        tokenData.access_token,
+        callbackUrl,
+      )
+      if (failed.length > 0) {
+        console.warn('[shopify/callback] Some webhooks failed to register:', failed)
+      }
+      await db()
+        .from('shopify_config')
+        .update({
+          webhooks_registered_at: registered.length > 0 ? new Date().toISOString() : null,
+          webhook_topics: registered.length > 0 ? registered : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+    } catch (err) {
+      console.error('[shopify/callback] Webhook registration error:', err)
     }
 
     // ── 6. Clear cookies and return to settings ─────────────────────────────

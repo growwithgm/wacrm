@@ -104,7 +104,7 @@ export function MessageComposer({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-background p-1.5 transition-colors focus-within:border-primary/50">
         <Button
           variant="ghost"
           size="sm"
@@ -128,14 +128,14 @@ export function MessageComposer({
           disabled={sessionExpired}
           rows={1}
           className={cn(
-            "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
+            "flex-1 resize-none border-none bg-transparent px-1 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground",
             sessionExpired && "cursor-not-allowed opacity-50"
           )}
         />
 
         <Button
           size="sm"
-          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+          className="h-10 w-10 shrink-0 rounded-xl bg-primary p-0 shadow-[0_8px_20px_rgba(22,163,74,0.22)] hover:bg-primary-hover disabled:opacity-40 disabled:shadow-none"
           disabled={!text.trim() || sessionExpired || sending}
           onClick={handleSend}
         >

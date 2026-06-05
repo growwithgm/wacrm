@@ -9,11 +9,13 @@ import {
   Loader2,
   RefreshCw,
   ShoppingCart,
+  ShoppingBag,
   Unplug,
   Users,
   XCircle,
   Store,
   ArrowRight,
+  Webhook,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
@@ -38,6 +40,8 @@ interface ConfigState {
   plan?: string | null
   reason?: string
   message?: string
+  webhooks_registered_at?: string | null
+  webhook_topics?: string[]
 }
 
 interface SyncProgress {
@@ -80,6 +84,15 @@ export function ShopifyConfig() {
     updated: 0,
     errors: 0,
   })
+  const emptyProgress: SyncProgress = {
+    running: false,
+    total_processed: 0,
+    created: 0,
+    updated: 0,
+    errors: 0,
+  }
+  const [orderSync, setOrderSync] = useState<SyncProgress>(emptyProgress)
+  const [checkoutSync, setCheckoutSync] = useState<SyncProgress>(emptyProgress)
 
   // Only load config once per user (same pattern as WhatsAppConfig)
   const fetchedForRef = useRef<string | null>(null)
@@ -125,6 +138,8 @@ export function ShopifyConfig() {
         plan: payload.plan,
         reason: payload.reason,
         message: payload.message,
+        webhooks_registered_at: payload.webhooks_registered_at,
+        webhook_topics: payload.webhook_topics,
       })
     } catch {
       // Keep cached state on network error
@@ -251,6 +266,73 @@ export function ShopifyConfig() {
       toast.error('Sync interrupted — check Vercel logs')
       setSync((prev) => ({ ...prev, running: false }))
     }
+  }
+
+  // ── Generic resource sync (orders / abandoned checkouts) ─────────────────────
+  // The /orders and /checkouts endpoints share the cursor-loop contract; they
+  // report { processed, total_processed, errors, done, next_cursor } per page.
+  async function runResourceSync(
+    endpoint: string,
+    label: string,
+    setProgress: React.Dispatch<React.SetStateAction<SyncProgress>>,
+  ) {
+    setProgress({ ...emptyProgress, running: true })
+    let cursor: string | null = null
+    let totalErrors = 0
+    let totalProcessed = 0
+
+    try {
+      while (true) {
+        const res: Response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cursor, total_processed: totalProcessed }),
+        })
+        const data: {
+          done?: boolean
+          next_cursor?: string | null
+          total_processed?: number
+          errors?: number
+          error?: string
+        } = await res.json()
+
+        if (!res.ok) {
+          toast.error(data.error ?? `${label} sync failed`)
+          setProgress((p) => ({ ...p, running: false }))
+          break
+        }
+
+        totalErrors += data.errors ?? 0
+        totalProcessed = data.total_processed ?? totalProcessed
+        setProgress({
+          running: !data.done,
+          total_processed: totalProcessed,
+          created: 0,
+          updated: 0,
+          errors: totalErrors,
+        })
+
+        if (data.done) {
+          toast.success(
+            `${label} sync complete — ${totalProcessed} processed${totalErrors > 0 ? `, ${totalErrors} errors` : ''}`,
+          )
+          break
+        }
+        cursor = data.next_cursor ?? null
+      }
+    } catch (err) {
+      console.error(`[ShopifyConfig] ${label} sync error:`, err)
+      toast.error(`${label} sync interrupted`)
+      setProgress((p) => ({ ...p, running: false }))
+    }
+  }
+
+  const handleSyncOrders = () => {
+    if (!orderSync.running) runResourceSync('/api/shopify/sync/orders', 'Orders', setOrderSync)
+  }
+  const handleSyncCheckouts = () => {
+    if (!checkoutSync.running)
+      runResourceSync('/api/shopify/sync/checkouts', 'Abandoned checkouts', setCheckoutSync)
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -394,6 +476,35 @@ export function ShopifyConfig() {
               </CardContent>
             </Card>
 
+            {/* Webhook status */}
+            <Card className="bg-card border-border">
+              <CardContent className="pt-5">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={
+                      config?.webhooks_registered_at
+                        ? 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary'
+                        : 'flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground'
+                    }
+                  >
+                    <Webhook className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {config?.webhooks_registered_at
+                        ? 'Webhooks active'
+                        : 'Webhooks not registered'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {config?.webhooks_registered_at
+                        ? `${config.webhook_topics?.length ?? 0} topics (orders, checkouts, fulfillments) · since ${formatTimestamp(config.webhooks_registered_at)}`
+                        : 'Order / checkout / fulfillment events register automatically on connect — but only from a public HTTPS deployment. Reconnect from production to enable.'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Sync progress / result */}
             {(sync.running || sync.total_processed > 0) && (
               <Card className="bg-card border-border">
@@ -420,7 +531,7 @@ export function ShopifyConfig() {
               </Card>
             )}
 
-            {/* Action buttons */}
+            {/* Sync actions */}
             <div className="flex flex-wrap gap-3">
               <Button
                 onClick={handleSync}
@@ -442,6 +553,44 @@ export function ShopifyConfig() {
 
               <Button
                 variant="outline"
+                onClick={handleSyncOrders}
+                disabled={orderSync.running}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                {orderSync.running ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Syncing orders… {orderSync.total_processed.toLocaleString()}
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag className="size-4" />
+                    Sync Orders
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleSyncCheckouts}
+                disabled={checkoutSync.running}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                {checkoutSync.running ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Syncing carts… {checkoutSync.total_processed.toLocaleString()}
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="size-4" />
+                    Sync Abandoned Checkouts
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
                 onClick={handleDisconnect}
                 disabled={disconnecting || sync.running}
                 className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
@@ -454,6 +603,24 @@ export function ShopifyConfig() {
                 Disconnect Store
               </Button>
             </div>
+
+            {/* Orders / checkouts sync result lines */}
+            {(orderSync.total_processed > 0 || checkoutSync.total_processed > 0) && (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {orderSync.total_processed > 0 && (
+                  <p>
+                    Orders: {orderSync.total_processed.toLocaleString()} processed
+                    {orderSync.errors > 0 && ` · ${orderSync.errors} errors`}
+                  </p>
+                )}
+                {checkoutSync.total_processed > 0 && (
+                  <p>
+                    Abandoned checkouts: {checkoutSync.total_processed.toLocaleString()} processed
+                    {checkoutSync.errors > 0 && ` · ${checkoutSync.errors} errors`}
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -466,18 +633,22 @@ export function ShopifyConfig() {
               Shopify Integration
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              Phase 1: OAuth connect + customer data sync.
+              OAuth connect, plus customer, order, abandoned-checkout &amp; fulfillment
+              sync with live webhooks.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">What gets synced</p>
               <ul className="space-y-1 list-disc list-inside">
-                <li>Customer name, email, phone (E.164)</li>
-                <li>Lifetime order count &amp; total spend</li>
-                <li>Last order date</li>
-                <li>Shopify customer tags</li>
+                <li>Customers — name, email, phone, lifetime orders &amp; spend</li>
+                <li>Orders — totals, payment &amp; fulfillment status, line items</li>
+                <li>Abandoned checkouts — cart items, value &amp; recovery link</li>
+                <li>Fulfillments — tracking number, carrier &amp; shipment status</li>
               </ul>
+              <p className="text-xs">
+                Backfill with the sync buttons; webhooks keep everything current after.
+              </p>
             </div>
 
             <div className="space-y-2 text-sm text-muted-foreground">
