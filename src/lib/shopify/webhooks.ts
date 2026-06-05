@@ -23,6 +23,8 @@ const TOPIC_MAP: Record<string, string> = {
   'checkouts/update': 'CHECKOUTS_UPDATE',
   'fulfillments/create': 'FULFILLMENTS_CREATE',
   'fulfillments/update': 'FULFILLMENTS_UPDATE',
+  // Lifecycle: fires when the merchant uninstalls the app — triggers cleanup.
+  'app/uninstalled': 'APP_UNINSTALLED',
 }
 
 const ENUM_TO_REST: Record<string, string> = Object.fromEntries(
@@ -127,6 +129,7 @@ interface ListResult {
 }
 
 export interface LiveWebhook {
+  id: string
   topic: string
   callbackUrl: string | null
 }
@@ -141,7 +144,49 @@ export async function listWebhooks(
 ): Promise<LiveWebhook[]> {
   const res = await shopifyGraphQL<ListResult>(storeDomain, accessToken, LIST_QUERY)
   return res.data.webhookSubscriptions.edges.map((e) => ({
+    id: e.node.id,
     topic: ENUM_TO_REST[e.node.topic] ?? e.node.topic.toLowerCase().replace(/_/g, '/'),
     callbackUrl: e.node.endpoint?.callbackUrl ?? null,
   }))
+}
+
+const DELETE_MUTATION = `
+  mutation DeleteWebhook($id: ID!) {
+    webhookSubscriptionDelete(id: $id) {
+      deletedWebhookSubscriptionId
+      userErrors { message }
+    }
+  }
+`
+
+interface DeleteResult {
+  webhookSubscriptionDelete: {
+    deletedWebhookSubscriptionId: string | null
+    userErrors: { message: string }[]
+  }
+}
+
+/**
+ * Delete this app's webhook subscriptions for a store (those pointing at our
+ * callback URL; pass no URL to remove all of ours). Best-effort — used by the
+ * manual Disconnect while the token is still valid. (On a real uninstall,
+ * Shopify removes the subscriptions itself.)
+ */
+export async function deleteWebhooks(
+  storeDomain: string,
+  accessToken: string,
+  callbackUrl?: string,
+): Promise<{ deleted: number }> {
+  const subs = await listWebhooks(storeDomain, accessToken)
+  const ours = callbackUrl ? subs.filter((s) => s.callbackUrl === callbackUrl) : subs
+  let deleted = 0
+  for (const s of ours) {
+    try {
+      await shopifyGraphQL<DeleteResult>(storeDomain, accessToken, DELETE_MUTATION, { id: s.id })
+      deleted++
+    } catch (err) {
+      console.error('[shopify] webhook delete failed', s.topic, err)
+    }
+  }
+  return { deleted }
 }

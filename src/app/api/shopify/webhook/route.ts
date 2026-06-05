@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { verifyShopifyWebhookHmac } from '@/lib/shopify/hmac'
-import { upsertOrder, upsertCheckout, applyFulfillmentEvent } from '@/lib/shopify/store'
+import {
+  upsertOrder,
+  upsertCheckout,
+  applyFulfillmentEvent,
+  cleanupStoreData,
+} from '@/lib/shopify/store'
 import type { RestOrder, RestCheckout, RestFulfillment } from '@/lib/shopify/transform'
 
 // Node runtime — needs `crypto` for HMAC verification.
@@ -154,6 +159,20 @@ export async function POST(request: Request) {
       case 'fulfillments/update':
         await applyFulfillmentEvent(db(), userId, payload as RestFulfillment)
         break
+
+      case 'app/uninstalled':
+      case 'shop/redact': {
+        // Merchant removed the app (or GDPR shop redaction). Shopify revokes
+        // the token and removes its own webhooks on uninstall, so we just
+        // purge our side: all commerce data + the connection row.
+        const counts = await cleanupStoreData(db(), userId, storeDomain)
+        await db().from('shopify_config').delete().eq('user_id', userId)
+        console.log('[shopify/webhook] store cleanup on', topic, {
+          shop: shopDomain,
+          counts,
+        })
+        break
+      }
 
       default:
         console.warn(`[shopify/webhook] Unhandled topic: ${topic}`)
