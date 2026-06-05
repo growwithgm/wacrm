@@ -409,3 +409,71 @@ export interface AutomationLog {
   created_at: string;
   contact?: Contact;
 }
+
+// ============================================================
+// Shopify commerce (Phase A — migration 016)
+// ============================================================
+
+export interface ShopifyLineItem {
+  title: string;
+  quantity: number;
+  price: string | null;
+  variant_title: string | null;
+  sku: string | null;
+}
+
+export interface ShopifyOrder {
+  id: string;
+  user_id: string;
+  contact_id: string | null;
+  store_domain: string | null;
+  shopify_order_id: string;
+  order_number: string | null;
+  name: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  shipping_address: Record<string, unknown> | null;
+  shipping_method: string | null;
+  currency: string | null;
+  total_price: number | null;
+  subtotal_price: number | null;
+  total_shipping: number | null;
+  financial_status: string | null;
+  fulfillment_status: string | null;
+  payment_gateway: string | null;
+  line_items: ShopifyLineItem[] | null;
+  tags: string[] | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  tracking_company: string | null;
+  shipment_status: string | null;
+  fulfilled_at: string | null;
+  order_created_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShopifyCheckout {
+  id: string;
+  user_id: string;
+  contact_id: string | null;
+  store_domain: string | null;
+  shopify_checkout_id: string;
+  token: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  line_items: ShopifyLineItem[] | null;
+  abandoned_checkout_url: string | null;
+  currency: string | null;
+  total_price: number | null;
+  shopify_created_at: string | null;
+  abandoned_at: string | null;
+  completed_at: string | null;
+  recovered: boolean;
+  recovered_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+}

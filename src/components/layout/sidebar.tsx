@@ -22,6 +22,8 @@ import {
   ChevronDown,
   FileText,
   ShoppingCart,
+  ShoppingBag,
+  Store,
   Tag,
 } from "lucide-react";
 import {
@@ -48,17 +50,19 @@ interface NavItem {
 // Broadcasts→Campaigns). Every existing route is kept so no feature is
 // orphaned — Pipelines and Tags sit alongside the design's nav.
 const navItems: NavItem[] = [
-  { href: "/dashboard",   label: "Overview",    icon: LayoutDashboard },
-  { href: "/inbox",       label: "Inbox",       icon: MessageSquare },
-  { href: "/broadcasts",  label: "Campaigns",   icon: Radio },
-  { href: "/contacts",    label: "Contacts",    icon: Users },
-  { href: "/pipelines",   label: "Pipelines",   icon: GitBranch },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows",       label: "Flows",       icon: Workflow, beta: true },
-  { href: "/shopify",     label: "Shopify",     icon: ShoppingCart },
-  { href: "/templates",   label: "Templates",   icon: FileText },
-  { href: "/tags",        label: "Tags",        icon: Tag },
-  { href: "/settings",    label: "Settings",    icon: Settings },
+  { href: "/dashboard",       label: "Overview",        icon: LayoutDashboard },
+  { href: "/inbox",           label: "Inbox",           icon: MessageSquare },
+  { href: "/broadcasts",      label: "Campaigns",       icon: Radio },
+  { href: "/contacts",        label: "Contacts",        icon: Users },
+  { href: "/orders",          label: "Orders",          icon: ShoppingBag },
+  { href: "/abandoned-carts", label: "Abandoned Carts", icon: ShoppingCart },
+  { href: "/pipelines",       label: "Pipelines",       icon: GitBranch },
+  { href: "/automations",     label: "Automations",     icon: Zap },
+  { href: "/flows",           label: "Flows",           icon: Workflow, beta: true },
+  { href: "/shopify",         label: "Shopify",         icon: Store },
+  { href: "/templates",       label: "Templates",       icon: FileText },
+  { href: "/tags",            label: "Tags",            icon: Tag },
+  { href: "/settings",        label: "Settings",        icon: Settings },
 ];
 
 // Wasify brand mark — green outlined speech bubble with a bold "W" and the

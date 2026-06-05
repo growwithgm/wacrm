@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
-import { Phone, Copy, Check, Plus } from "lucide-react";
+import type {
+  Contact,
+  Deal,
+  ContactNote,
+  Tag,
+  ShopifyOrder,
+  ShopifyCheckout,
+} from "@/types";
+import { Phone, Copy, Check, Plus, Package, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
@@ -52,6 +59,33 @@ function Section({
   );
 }
 
+/** Label / value row used by the Shopify section. */
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-0.5">
+      <span className="text-[13px] text-muted-foreground">{label}</span>
+      <span className="font-heading text-[13px] font-bold text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function money(amount: number | null, currency: string | null): string {
+  if (amount == null) return "—";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "USD",
+      minimumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency ?? ""}`.trim();
+  }
+}
+
+function StatusText({ value, fallback }: { value: string | null; fallback: string }) {
+  return <span className="capitalize">{(value ?? fallback).replace(/_/g, " ")}</span>;
+}
+
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -59,29 +93,55 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  // Shopify commerce data for this contact (Phase A)
+  const [orderCount, setOrderCount] = useState(0);
+  const [latestOrder, setLatestOrder] = useState<ShopifyOrder | null>(null);
+  const [openCheckout, setOpenCheckout] = useState<ShopifyCheckout | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
-      supabase
-        .from("deals")
-        .select("*, stage:pipeline_stages(*)")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("contact_notes")
-        .select("*")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("contact_tags")
-        .select("id, tag_id, tags(*)")
-        .eq("contact_id", contact.id),
-    ]);
+    // Fetch deals, notes, tags + Shopify commerce data in parallel. The
+    // shopify_* queries return nothing (and the section stays hidden) until
+    // the store is connected and synced — so this is safe pre-Shopify too.
+    const [dealsRes, notesRes, tagsRes, orderCountRes, latestOrderRes, checkoutRes] =
+      await Promise.all([
+        supabase
+          .from("deals")
+          .select("*, stage:pipeline_stages(*)")
+          .eq("contact_id", contact.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("contact_notes")
+          .select("*")
+          .eq("contact_id", contact.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("contact_tags")
+          .select("id, tag_id, tags(*)")
+          .eq("contact_id", contact.id),
+        supabase
+          .from("shopify_orders")
+          .select("id", { count: "exact", head: true })
+          .eq("contact_id", contact.id),
+        supabase
+          .from("shopify_orders")
+          .select("*")
+          .eq("contact_id", contact.id)
+          .order("order_created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("shopify_checkouts")
+          .select("*")
+          .eq("contact_id", contact.id)
+          .eq("recovered", false)
+          .order("abandoned_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
@@ -94,6 +154,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    // Set explicitly (including the empty case) so switching contacts resets.
+    setOrderCount(orderCountRes.count ?? 0);
+    setLatestOrder((latestOrderRes.data as ShopifyOrder | null) ?? null);
+    setOpenCheckout((checkoutRes.data as ShopifyCheckout | null) ?? null);
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -228,6 +292,98 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             )}
           </div>
         </Section>
+
+        {/* Shopify — order data (Phase A). Hidden until the contact has a
+            synced order or open abandoned cart. */}
+        {(latestOrder || openCheckout || orderCount > 0) && (
+          <Section title="Shopify">
+            <div className="space-y-1">
+              <Row label="Total orders" value={String(orderCount)} />
+              {latestOrder && (
+                <>
+                  <Row
+                    label="Last order"
+                    value={
+                      latestOrder.name ||
+                      `#${latestOrder.order_number ?? latestOrder.shopify_order_id}`
+                    }
+                  />
+                  <Row
+                    label="Order total"
+                    value={money(latestOrder.total_price, latestOrder.currency)}
+                  />
+                  <Row
+                    label="Payment"
+                    value={<StatusText value={latestOrder.financial_status} fallback="pending" />}
+                  />
+                  <Row
+                    label="Fulfillment"
+                    value={
+                      <StatusText value={latestOrder.fulfillment_status} fallback="unfulfilled" />
+                    }
+                  />
+                  {latestOrder.tracking_number && (
+                    <div className="flex items-center justify-between gap-2 py-0.5">
+                      <span className="text-[13px] text-muted-foreground">Tracking</span>
+                      {latestOrder.tracking_url ? (
+                        <a
+                          href={latestOrder.tracking_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-heading text-[13px] font-bold text-primary hover:underline"
+                        >
+                          {latestOrder.tracking_number}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="font-heading text-[13px] font-bold text-foreground">
+                          {latestOrder.tracking_number}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </Section>
+        )}
+
+        {/* Abandoned cart — only when an open (unrecovered) checkout exists. */}
+        {openCheckout && (
+          <Section title="Abandoned cart">
+            <div className="rounded-xl border border-warning/20 bg-warning/10 p-3">
+              <div className="flex items-center justify-between">
+                <span className="font-heading text-[13px] font-bold text-foreground">
+                  {money(openCheckout.total_price, openCheckout.currency)}
+                </span>
+                {openCheckout.abandoned_checkout_url && (
+                  <a
+                    href={openCheckout.abandoned_checkout_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[12px] font-bold text-primary hover:underline"
+                  >
+                    Recover
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+              <ul className="mt-2 space-y-1">
+                {(openCheckout.line_items ?? []).slice(0, 4).map((li, i) => (
+                  <li
+                    key={i}
+                    className="flex items-center gap-2 text-[12.5px] text-muted-foreground"
+                  >
+                    <Package className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {li.quantity}× {li.title}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Section>
+        )}
 
         {/* Active Deals */}
         <Section title="Active Deals">

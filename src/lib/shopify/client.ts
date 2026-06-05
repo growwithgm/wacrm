@@ -185,3 +185,81 @@ export async function shopifyGraphQL<T = unknown>(
 
   return json as GraphQLResponse<T>
 }
+
+// ─── REST Client ──────────────────────────────────────────────────────────────
+//
+// Orders, abandoned checkouts and fulfillments are read over the REST Admin
+// API rather than GraphQL because Shopify webhooks deliver REST-shaped JSON —
+// using REST for the initial backfill too means the sync routes and the
+// webhook receiver share one set of payload mappers (src/lib/shopify/transform).
+
+export interface ShopifyRestResult<T> {
+  data: T
+  /** `page_info` cursor for the next page, parsed from the Link header; null when no more pages. */
+  nextPageInfo: string | null
+}
+
+/** Parse the `page_info` of the rel="next" link out of a Shopify Link header. */
+function parseNextPageInfo(linkHeader: string | null): string | null {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    if (!part.includes('rel="next"')) continue
+    const m = part.match(/[?&]page_info=([^&>]+)/)
+    if (m) return decodeURIComponent(m[1])
+  }
+  return null
+}
+
+/**
+ * GET a Shopify REST Admin API resource. `path` is the resource path
+ * relative to the versioned admin root, e.g. `orders.json?status=any&limit=50`.
+ * Returns the parsed body plus the next-page cursor (if any).
+ */
+export async function shopifyRest<T = unknown>(
+  storeDomain: string,
+  accessToken: string,
+  path: string,
+): Promise<ShopifyRestResult<T>> {
+  const url = `https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/${path.replace(/^\/+/, '')}`
+
+  const res = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken,
+    },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Shopify REST HTTP ${res.status}: ${text}`)
+  }
+
+  const data = (await res.json()) as T
+  return { data, nextPageInfo: parseNextPageInfo(res.headers.get('link')) }
+}
+
+/** POST to a Shopify REST Admin API resource (used for webhook registration). */
+export async function shopifyRestPost<T = unknown>(
+  storeDomain: string,
+  accessToken: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const url = `https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/${path.replace(/^\/+/, '')}`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Shopify REST POST HTTP ${res.status}: ${text}`)
+  }
+
+  return res.json() as Promise<T>
+}
