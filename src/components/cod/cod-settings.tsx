@@ -10,6 +10,7 @@ import {
   Loader2,
   MessageSquareText,
   PackageCheck,
+  Reply,
   Store,
   XCircle,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -32,21 +34,34 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { COD_FIELD_OPTIONS, countPlaceholders } from '@/lib/cod/fields'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+type VarMap = Record<string, string>
 
 interface CodConfig {
   cod_enabled: boolean
   cod_template_name: string | null
   cod_template_language: string | null
+  cod_confirm_var_map: VarMap
   cod_thankyou_enabled: boolean
   cod_thankyou_template_name: string | null
   cod_thankyou_template_language: string | null
+  cod_thankyou_var_map: VarMap
   cod_reminders_enabled: boolean
   cod_reminder_count: number
   cod_reminder1_hours: number
   cod_reminder2_hours: number
   cod_noreply_hours: number
+  cod_yes_message_enabled: boolean
+  cod_yes_message_text: string
+  cod_no_message_enabled: boolean
+  cod_no_message_text: string
+  cod_noreply_template_enabled: boolean
+  cod_noreply_template_name: string | null
+  cod_noreply_template_language: string | null
+  cod_noreply_var_map: VarMap
 }
 
 interface CodCounts {
@@ -59,20 +74,33 @@ interface CodCounts {
 interface ApprovedTpl {
   name: string
   language: string
+  body_text: string
 }
+
+const DEFAULT_VAR_MAP: VarMap = { '1': 'order_number', '2': 'total' }
 
 const DEFAULTS: CodConfig = {
   cod_enabled: true,
   cod_template_name: null,
   cod_template_language: null,
+  cod_confirm_var_map: { ...DEFAULT_VAR_MAP },
   cod_thankyou_enabled: false,
   cod_thankyou_template_name: null,
   cod_thankyou_template_language: null,
+  cod_thankyou_var_map: { ...DEFAULT_VAR_MAP },
   cod_reminders_enabled: true,
   cod_reminder_count: 2,
   cod_reminder1_hours: 24,
   cod_reminder2_hours: 48,
   cod_noreply_hours: 72,
+  cod_yes_message_enabled: false,
+  cod_yes_message_text: '',
+  cod_no_message_enabled: false,
+  cod_no_message_text: '',
+  cod_noreply_template_enabled: false,
+  cod_noreply_template_name: null,
+  cod_noreply_template_language: null,
+  cod_noreply_var_map: { ...DEFAULT_VAR_MAP },
 }
 
 // Composite key for the template <Select> (a template is unique by name+lang).
@@ -122,6 +150,62 @@ function ApprovedTemplateSelect({
         )}
       </SelectContent>
     </Select>
+  )
+}
+
+// ─── Per-template variable mapping (Part A) ──────────────────────────────────
+// One dropdown per {{n}} placeholder in the selected template's body, mapping
+// it to an order-derived field. Reused for the confirmation, thank-you, and
+// no-reply template slots.
+
+function VariableMapping({
+  templates,
+  name,
+  language,
+  varMap,
+  onChange,
+}: {
+  templates: ApprovedTpl[]
+  name: string | null
+  language: string | null
+  varMap: VarMap
+  onChange: (next: VarMap) => void
+}) {
+  if (!name) return null
+  const tpl = templates.find((t) => t.name === name && t.language === language)
+  const count = tpl ? countPlaceholders(tpl.body_text ?? '') : 0
+  if (count === 0) {
+    return <p className="text-xs text-muted-foreground">This template has no variables to map.</p>
+  }
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+      <p className="text-xs font-medium text-foreground">Fill each variable with an order field:</p>
+      {Array.from({ length: count }, (_, idx) => {
+        const i = String(idx + 1)
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <code className="w-10 shrink-0 text-xs text-muted-foreground">{`{{${i}}}`}</code>
+            <Select
+              value={varMap[i] ?? ''}
+              onValueChange={(v) => {
+                if (v) onChange({ ...varMap, [i]: v })
+              }}
+            >
+              <SelectTrigger className="w-full max-w-xs">
+                <SelectValue placeholder="Choose a field" />
+              </SelectTrigger>
+              <SelectContent>
+                {COD_FIELD_OPTIONS.map((o) => (
+                  <SelectItem key={o.key} value={o.key}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -185,7 +269,7 @@ export function CodSettings() {
         if (user) {
           const { data: tpls } = await supabase
             .from('message_templates')
-            .select('name, language, status')
+            .select('name, language, status, body_text')
             .eq('user_id', user.id)
             .eq('status', 'Approved')
             .order('created_at', { ascending: false })
@@ -196,7 +280,7 @@ export function CodSettings() {
               const key = tplKey(t.name, t.language)
               if (!t.name || !t.language || seen.has(key)) continue
               seen.add(key)
-              list.push({ name: t.name, language: t.language })
+              list.push({ name: t.name, language: t.language, body_text: t.body_text ?? '' })
             }
             setTemplates(list)
           }
@@ -218,14 +302,25 @@ export function CodSettings() {
           cod_enabled: c.cod_enabled ?? DEFAULTS.cod_enabled,
           cod_template_name: c.cod_template_name ?? null,
           cod_template_language: c.cod_template_language ?? null,
+          cod_confirm_var_map: c.cod_confirm_var_map ?? { ...DEFAULT_VAR_MAP },
           cod_thankyou_enabled: c.cod_thankyou_enabled ?? DEFAULTS.cod_thankyou_enabled,
           cod_thankyou_template_name: c.cod_thankyou_template_name ?? null,
           cod_thankyou_template_language: c.cod_thankyou_template_language ?? null,
+          cod_thankyou_var_map: c.cod_thankyou_var_map ?? { ...DEFAULT_VAR_MAP },
           cod_reminders_enabled: c.cod_reminders_enabled ?? DEFAULTS.cod_reminders_enabled,
           cod_reminder_count: c.cod_reminder_count ?? DEFAULTS.cod_reminder_count,
           cod_reminder1_hours: c.cod_reminder1_hours ?? DEFAULTS.cod_reminder1_hours,
           cod_reminder2_hours: c.cod_reminder2_hours ?? DEFAULTS.cod_reminder2_hours,
           cod_noreply_hours: c.cod_noreply_hours ?? DEFAULTS.cod_noreply_hours,
+          cod_yes_message_enabled: c.cod_yes_message_enabled ?? DEFAULTS.cod_yes_message_enabled,
+          cod_yes_message_text: c.cod_yes_message_text ?? '',
+          cod_no_message_enabled: c.cod_no_message_enabled ?? DEFAULTS.cod_no_message_enabled,
+          cod_no_message_text: c.cod_no_message_text ?? '',
+          cod_noreply_template_enabled:
+            c.cod_noreply_template_enabled ?? DEFAULTS.cod_noreply_template_enabled,
+          cod_noreply_template_name: c.cod_noreply_template_name ?? null,
+          cod_noreply_template_language: c.cod_noreply_template_language ?? null,
+          cod_noreply_var_map: c.cod_noreply_var_map ?? { ...DEFAULT_VAR_MAP },
         })
       } catch (err) {
         console.error('[cod-settings] load failed:', err)
@@ -248,6 +343,18 @@ export function CodSettings() {
     }
     if (config.cod_thankyou_enabled && !config.cod_thankyou_template_name) {
       toast.error('Pick a thank-you template (Step 3) or turn the thank-you off.')
+      return
+    }
+    if (config.cod_yes_message_enabled && !config.cod_yes_message_text.trim()) {
+      toast.error('Enter the “SÍ” reply text or turn it off.')
+      return
+    }
+    if (config.cod_no_message_enabled && !config.cod_no_message_text.trim()) {
+      toast.error('Enter the “NO” reply text or turn it off.')
+      return
+    }
+    if (config.cod_noreply_template_enabled && !config.cod_noreply_template_name) {
+      toast.error('Pick a no-reply template (Reply responses) or turn it off.')
       return
     }
     setSaving(true)
@@ -339,9 +446,8 @@ export function CodSettings() {
                 Step 1 · Confirmation template
               </CardTitle>
               <CardDescription>
-                The approved template sent immediately when a COD order arrives. Variables:
-                {' '}<code className="text-xs">{'{{1}}'}</code> order number,{' '}
-                <code className="text-xs">{'{{2}}'}</code> total.
+                The approved template sent immediately when a COD order arrives. Map each of its
+                variables to an order field below.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -361,6 +467,13 @@ export function CodSettings() {
                   ({config.cod_template_language})
                 </p>
               )}
+              <VariableMapping
+                templates={templates}
+                name={config.cod_template_name}
+                language={config.cod_template_language}
+                varMap={config.cod_confirm_var_map}
+                onChange={(next) => set('cod_confirm_var_map', next)}
+              />
             </CardContent>
           </Card>
 
@@ -421,10 +534,13 @@ export function CodSettings() {
                     set('cod_thankyou_template_language', language)
                   }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Body variables are auto-fitted to the template ({'{{1}}'} order, {'{{2}}'} total) —
-                  a template with no variables also works.
-                </p>
+                <VariableMapping
+                  templates={templates}
+                  name={config.cod_thankyou_template_name}
+                  language={config.cod_thankyou_template_language}
+                  varMap={config.cod_thankyou_var_map}
+                  onChange={(next) => set('cod_thankyou_var_map', next)}
+                />
               </CardContent>
             )}
           </Card>
@@ -506,6 +622,110 @@ export function CodSettings() {
                 </p>
               </CardContent>
             )}
+          </Card>
+
+          {/* Part B — response messages per reply outcome */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Reply className="h-4 w-4 text-primary" />
+                Reply responses
+              </CardTitle>
+              <CardDescription>
+                Optional messages after each reply outcome. Immediate SÍ/NO replies are inside the
+                24h window, so you can send free text. The no-reply case is outside the window, so it
+                must be an approved template.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* On "SÍ confirmo" — free text */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground">
+                      On &ldquo;SÍ confirmo&rdquo; — free text
+                    </span>
+                  </div>
+                  <Switch
+                    checked={config.cod_yes_message_enabled}
+                    onCheckedChange={(v) => set('cod_yes_message_enabled', v)}
+                  />
+                </div>
+                {config.cod_yes_message_enabled && (
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. ¡Gracias! Tu pedido está confirmado y lo preparamos ahora."
+                    value={config.cod_yes_message_text}
+                    onChange={(e) => set('cod_yes_message_text', e.target.value)}
+                  />
+                )}
+              </div>
+
+              {/* On "NO cancelar" — free text */}
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-rose-500" />
+                    <span className="text-sm font-medium text-foreground">
+                      On &ldquo;NO cancelar&rdquo; — free text
+                    </span>
+                  </div>
+                  <Switch
+                    checked={config.cod_no_message_enabled}
+                    onCheckedChange={(v) => set('cod_no_message_enabled', v)}
+                  />
+                </div>
+                {config.cod_no_message_enabled && (
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. Hemos registrado tu solicitud de cancelación. Te contactaremos."
+                    value={config.cod_no_message_text}
+                    onChange={(e) => set('cod_no_message_text', e.target.value)}
+                  />
+                )}
+              </div>
+
+              {/* After no reply — approved template (window closed) */}
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-slate-400" />
+                    <span className="text-sm font-medium text-foreground">
+                      After no reply — approved template
+                    </span>
+                  </div>
+                  <Switch
+                    checked={config.cod_noreply_template_enabled}
+                    onCheckedChange={(v) => set('cod_noreply_template_enabled', v)}
+                  />
+                </div>
+                {config.cod_noreply_template_enabled && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Sent at the &ldquo;No reply&rdquo; cutoff. The 24h window has closed, so only an
+                      approved template can be used here.
+                    </p>
+                    <ApprovedTemplateSelect
+                      templates={templates}
+                      name={config.cod_noreply_template_name}
+                      language={config.cod_noreply_template_language}
+                      onChange={(name, language) => {
+                        set('cod_noreply_template_name', name)
+                        set('cod_noreply_template_language', language)
+                      }}
+                    />
+                    <VariableMapping
+                      templates={templates}
+                      name={config.cod_noreply_template_name}
+                      language={config.cod_noreply_template_language}
+                      varMap={config.cod_noreply_var_map}
+                      onChange={(next) => set('cod_noreply_var_map', next)}
+                    />
+                  </div>
+                )}
+              </div>
+            </CardContent>
           </Card>
 
           <div className="flex justify-end">

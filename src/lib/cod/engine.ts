@@ -17,10 +17,11 @@
 import { getValidToken, type ShopifyConfigRow } from '@/lib/shopify/client'
 import { addOrderTags, removeOrderTags } from '@/lib/shopify/tags'
 import { resolveOrderPhone, type RestOrder } from '@/lib/shopify/transform'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage, sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, phonesMatch, phoneVariants, isRecipientNotAllowedError } from '@/lib/whatsapp/phone-utils'
 import { resolveTemplate } from '@/lib/whatsapp/templates'
+import { buildCodParams, countPlaceholders, type CodOrderFields } from './fields'
 
 // ─── COD order detection ────────────────────────────────────────────────────
 
@@ -63,20 +64,50 @@ function customerName(order: RestOrder): string | null {
   return fromCustomer || order.shipping_address?.name || null
 }
 
+/** Order fields from the live RestOrder — for the initial confirmation send. */
+function fieldsFromOrder(order: RestOrder, orderNumber: string, total: string): CodOrderFields {
+  const itemsCount = (order.line_items ?? []).reduce(
+    (sum, li) => sum + (li.quantity ?? 0),
+    0,
+  )
+  return {
+    first_name: order.customer?.first_name ?? null,
+    full_name: customerName(order),
+    order_number: orderNumber,
+    total,
+    currency: order.currency ?? null,
+    items_count: itemsCount || null,
+    shipping_city: order.shipping_address?.city ?? null,
+  }
+}
+
+/** Order fields from a stored cod_confirmations row — reminders/thank-you/no-reply. */
+function fieldsFromConf(conf: any): CodOrderFields {
+  return {
+    first_name: conf.customer_first_name ?? null,
+    full_name: conf.customer_full_name ?? null,
+    order_number: conf.order_number ?? null,
+    total: conf.total ?? null,
+    currency: conf.currency ?? null,
+    items_count: conf.items_count ?? null,
+    shipping_city: conf.shipping_city ?? null,
+  }
+}
+
 /**
- * Body params for the thank-you template, fitted to how many `{{n}}`
- * placeholders the chosen template actually has (read from message_templates).
- * Order is [order number, total] — so a parameterless thank-you template sends
- * no params (and isn't rejected by Meta for extra ones), a one-variable one
- * gets the order number, and a two-variable one gets order + total.
+ * Build a template's body params from a per-slot variable map: read the body to
+ * count {{n}} placeholders, then fill each from the mapped order field. A
+ * 0-variable template sends no params (so Meta never rejects it for extras).
+ * When the map is absent it falls back to the legacy default ({{1}} order
+ * number, {{2}} total) — preserving pre-migration behavior.
  */
-async function thankYouParams(
+async function paramsForTemplate(
   db: any,
   userId: string,
   templateName: string,
-  conf: { order_number?: string | null; total?: string | null },
+  varMap: Record<string, string> | null | undefined,
+  fields: CodOrderFields,
 ): Promise<string[]> {
-  const all = [conf.order_number ?? '', conf.total ?? '']
   const { data: tpl } = await db
     .from('message_templates')
     .select('body_text')
@@ -85,11 +116,100 @@ async function thankYouParams(
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  const body: string = tpl?.body_text ?? ''
-  const count = new Set(
-    [...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])),
-  ).size
-  return all.slice(0, Math.min(count, all.length))
+  const count = countPlaceholders(tpl?.body_text ?? '')
+  return buildCodParams(varMap, fields, count)
+}
+
+/**
+ * Send a free-text WhatsApp message (a 24h-window reply to SÍ/NO) and record it
+ * in the conversation. Mirrors sendCodTemplate's variant retry + inbox failure
+ * capture. Throws on terminal failure so the caller can log best-effort.
+ */
+async function sendCodText(
+  db: any,
+  userId: string,
+  conversationId: string,
+  contactId: string | null,
+  phone: string,
+  text: string,
+): Promise<string> {
+  const { data: wa } = await db
+    .from('whatsapp_config')
+    .select('phone_number_id, access_token')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (!wa?.access_token) throw new Error('WhatsApp not configured')
+
+  const accessToken = decrypt(wa.access_token)
+  const sanitized = sanitizePhoneForMeta(phone)
+  const variants = phoneVariants(sanitized)
+
+  let result: { messageId: string } | null = null
+  let workingPhone = sanitized
+  let lastError: unknown = null
+
+  for (const variant of variants) {
+    try {
+      result = await sendTextMessage({
+        phoneNumberId: wa.phone_number_id,
+        accessToken,
+        to: variant,
+        text,
+      })
+      workingPhone = variant
+      lastError = null
+      break
+    } catch (err) {
+      lastError = err
+      const message = err instanceof Error ? err.message : String(err)
+      if (!isRecipientNotAllowedError(message)) break
+      console.warn(`[cod] text variant "${variant}" rejected by Meta, trying next…`)
+    }
+  }
+
+  if (!result) {
+    const detail = lastError instanceof Error ? lastError.message : String(lastError)
+    console.error('[cod] text send failed', { phone: sanitized, detail })
+    await db.from('messages').insert({
+      conversation_id: conversationId,
+      sender_type: 'bot',
+      content_type: 'text',
+      status: 'failed',
+      content_text: `COD message failed to send: ${detail}`,
+    })
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: '[COD failed]',
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId)
+    throw lastError instanceof Error ? lastError : new Error(detail)
+  }
+
+  if (workingPhone !== sanitized && contactId) {
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contactId)
+  }
+
+  await db.from('messages').insert({
+    conversation_id: conversationId,
+    sender_type: 'bot',
+    content_type: 'text',
+    content_text: text,
+    message_id: result.messageId,
+    status: 'sent',
+  })
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: text,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+
+  return result.messageId
 }
 
 /** Find-or-create the contact + conversation for a phone (outbound first-touch). */
@@ -311,6 +431,7 @@ export async function startCodConfirmation(
       order.name ?? (order.order_number != null ? `#${order.order_number}` : `#${shopifyOrderId}`)
     const total = order.total_price != null ? String(order.total_price) : ''
     const currency = order.currency ?? null
+    const fields = fieldsFromOrder(order, orderNumber, total)
 
     const { contactId, conversationId } = await ensureContactConversation(
       db,
@@ -343,6 +464,22 @@ export async function startCodConfirmation(
       return
     }
 
+    // Snapshot the mappable order fields for later sends (reminders / thank-you
+    // / no-reply run from this row, with no live order). Best-effort + separate
+    // so a pre-021 deploy can't break confirmation creation.
+    const { error: snapErr } = await db
+      .from('cod_confirmations')
+      .update({
+        customer_first_name: fields.first_name,
+        customer_full_name: fields.full_name,
+        items_count: fields.items_count,
+        shipping_city: fields.shipping_city,
+      })
+      .eq('id', conf.id)
+    if (snapErr) {
+      console.warn('[cod] order-field snapshot skipped (run migration 021?):', snapErr.message)
+    }
+
     if (orderRowId) {
       await db
         .from('shopify_orders')
@@ -358,8 +495,16 @@ export async function startCodConfirmation(
       console.error('[cod] tag pending failed:', err)
     }
 
-    // Send the initial template (Message 1).
+    // Send the initial template (Message 1), filling variables per the
+    // configured confirmation mapping.
     try {
+      const params = await paramsForTemplate(
+        db,
+        userId,
+        config.cod_template_name,
+        config.cod_confirm_var_map,
+        fields,
+      )
       await sendCodTemplate(
         db,
         userId,
@@ -368,7 +513,7 @@ export async function startCodConfirmation(
         phone,
         config.cod_template_name,
         config.cod_template_language,
-        [orderNumber, total],
+        params,
       )
       await db
         .from('cod_confirmations')
@@ -471,11 +616,12 @@ export async function handleCodReply(
         conf.phone
       ) {
         try {
-          const params = await thankYouParams(
+          const params = await paramsForTemplate(
             db,
             userId,
             config.cod_thankyou_template_name,
-            conf,
+            config.cod_thankyou_var_map,
+            fieldsFromConf(conf),
           )
           await sendCodTemplate(
             db,
@@ -494,6 +640,30 @@ export async function handleCodReply(
           console.log('[cod] thank-you sent', sid)
         } catch (err) {
           console.error('[cod] thank-you send failed:', err)
+        }
+      }
+
+      // Part B — optional free-text confirmation reply. Inside the 24h window,
+      // so plain text is allowed (no template/approval needed). Independent of
+      // the Step 3 thank-you template above.
+      if (
+        config?.cod_yes_message_enabled &&
+        config.cod_yes_message_text &&
+        conf.conversation_id &&
+        conf.phone
+      ) {
+        try {
+          await sendCodText(
+            db,
+            userId,
+            conf.conversation_id,
+            conf.contact_id,
+            conf.phone,
+            config.cod_yes_message_text,
+          )
+          console.log('[cod] yes message sent', sid)
+        } catch (err) {
+          console.error('[cod] yes message send failed:', err)
         }
       }
     } else {
@@ -521,6 +691,28 @@ export async function handleCodReply(
           .update({ cod_status: 'cancel_requested' })
           .eq('id', conf.order_id)
       }
+
+      // Part B — optional free-text cancel reply (inside the 24h window).
+      if (
+        config?.cod_no_message_enabled &&
+        config.cod_no_message_text &&
+        conf.conversation_id &&
+        conf.phone
+      ) {
+        try {
+          await sendCodText(
+            db,
+            userId,
+            conf.conversation_id,
+            conf.contact_id,
+            conf.phone,
+            config.cod_no_message_text,
+          )
+          console.log('[cod] no message sent', sid)
+        } catch (err) {
+          console.error('[cod] no message send failed:', err)
+        }
+      }
       console.log('[cod] cancel requested', sid)
     }
   } catch (err) {
@@ -532,6 +724,14 @@ export async function handleCodReply(
 
 async function sendReminder(db: any, config: any, conf: any): Promise<void> {
   if (!conf.conversation_id || !conf.phone) return
+  // Reminders re-send the confirmation template, so they use its mapping.
+  const params = await paramsForTemplate(
+    db,
+    conf.user_id,
+    config.cod_template_name,
+    config.cod_confirm_var_map,
+    fieldsFromConf(conf),
+  )
   await sendCodTemplate(
     db,
     conf.user_id,
@@ -540,7 +740,7 @@ async function sendReminder(db: any, config: any, conf: any): Promise<void> {
     conf.phone,
     config.cod_template_name,
     config.cod_template_language,
-    [conf.order_number ?? '', conf.total ?? ''],
+    params,
   )
 }
 
@@ -592,6 +792,41 @@ export async function runCodTimers(db: any): Promise<{
         } catch (err) {
           console.error('[cod] no-reply tagging failed:', err)
         }
+
+        // Part B — optional no-reply message. The 24h window has closed, so this
+        // MUST be an approved template (free text isn't allowed here). Reuses
+        // sendCodTemplate (resolveTemplate applies). Best-effort so a send
+        // failure still lets the row settle to no_reply.
+        if (
+          config.cod_noreply_template_enabled &&
+          config.cod_noreply_template_name &&
+          conf.conversation_id &&
+          conf.phone
+        ) {
+          try {
+            const params = await paramsForTemplate(
+              db,
+              conf.user_id,
+              config.cod_noreply_template_name,
+              config.cod_noreply_var_map,
+              fieldsFromConf(conf),
+            )
+            await sendCodTemplate(
+              db,
+              conf.user_id,
+              conf.conversation_id,
+              conf.contact_id,
+              conf.phone,
+              config.cod_noreply_template_name,
+              config.cod_noreply_template_language || config.cod_template_language,
+              params,
+            )
+            console.log('[cod] no-reply template sent', conf.shopify_order_id)
+          } catch (err) {
+            console.error('[cod] no-reply template send failed:', err)
+          }
+        }
+
         await db
           .from('cod_confirmations')
           .update({ status: 'no_reply', no_reply_at: new Date().toISOString() })
