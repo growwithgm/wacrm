@@ -63,6 +63,35 @@ function customerName(order: RestOrder): string | null {
   return fromCustomer || order.shipping_address?.name || null
 }
 
+/**
+ * Body params for the thank-you template, fitted to how many `{{n}}`
+ * placeholders the chosen template actually has (read from message_templates).
+ * Order is [order number, total] — so a parameterless thank-you template sends
+ * no params (and isn't rejected by Meta for extra ones), a one-variable one
+ * gets the order number, and a two-variable one gets order + total.
+ */
+async function thankYouParams(
+  db: any,
+  userId: string,
+  templateName: string,
+  conf: { order_number?: string | null; total?: string | null },
+): Promise<string[]> {
+  const all = [conf.order_number ?? '', conf.total ?? '']
+  const { data: tpl } = await db
+    .from('message_templates')
+    .select('body_text')
+    .eq('user_id', userId)
+    .eq('name', templateName)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const body: string = tpl?.body_text ?? ''
+  const count = new Set(
+    [...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])),
+  ).size
+  return all.slice(0, Math.min(count, all.length))
+}
+
 /** Find-or-create the contact + conversation for a phone (outbound first-touch). */
 async function ensureContactConversation(
   db: any,
@@ -427,6 +456,46 @@ export async function handleCodReply(
         await db.from('shopify_orders').update({ cod_status: 'confirmed' }).eq('id', conf.order_id)
       }
       console.log('[cod] confirmed', sid)
+
+      // Step 3 — optional thank-you message. Sent at most once (guarded by
+      // cod_thankyou_sent_at); after it goes out the COD flow is complete —
+      // status is no longer 'pending', so runCodTimers skips this row. The
+      // thank-you reuses sendCodTemplate, so resolveTemplate (the name/lang
+      // resolver) still applies. Best-effort: a failure is logged + surfaced
+      // in the inbox by sendCodTemplate but never reverts the confirmation.
+      if (
+        config?.cod_thankyou_enabled &&
+        config.cod_thankyou_template_name &&
+        !conf.cod_thankyou_sent_at &&
+        conf.conversation_id &&
+        conf.phone
+      ) {
+        try {
+          const params = await thankYouParams(
+            db,
+            userId,
+            config.cod_thankyou_template_name,
+            conf,
+          )
+          await sendCodTemplate(
+            db,
+            userId,
+            conf.conversation_id,
+            conf.contact_id,
+            conf.phone,
+            config.cod_thankyou_template_name,
+            config.cod_thankyou_template_language || config.cod_template_language,
+            params,
+          )
+          await db
+            .from('cod_confirmations')
+            .update({ cod_thankyou_sent_at: new Date().toISOString() })
+            .eq('id', conf.id)
+          console.log('[cod] thank-you sent', sid)
+        } catch (err) {
+          console.error('[cod] thank-you send failed:', err)
+        }
+      }
     } else {
       // NO → cancel requested. Remove pending + add cancel tag (manual review;
       // we never auto-cancel in Shopify).
@@ -510,6 +579,12 @@ export async function runCodTimers(db: any): Promise<{
       if (!config) continue
       const ageHours = (now - new Date(conf.created_at).getTime()) / 3_600_000
 
+      // Step 4 reminder controls. Default to ON / 2 when the columns are
+      // absent (pre-migration), preserving the original behavior. The 72h
+      // no-reply tagging below is independent of these and always runs.
+      const remindersOn = config.cod_reminders_enabled !== false
+      const reminderCount = config.cod_reminder_count ?? 2
+
       if (ageHours >= config.cod_noreply_hours) {
         try {
           const token = await getValidToken(config as ShopifyConfigRow)
@@ -525,7 +600,12 @@ export async function runCodTimers(db: any): Promise<{
           await db.from('shopify_orders').update({ cod_status: 'no_reply' }).eq('id', conf.order_id)
         }
         noReplies++
-      } else if (ageHours >= config.cod_reminder2_hours && conf.messages_sent < 3) {
+      } else if (
+        remindersOn &&
+        reminderCount >= 2 &&
+        ageHours >= config.cod_reminder2_hours &&
+        conf.messages_sent < 3
+      ) {
         await sendReminder(db, config, conf)
         await db
           .from('cod_confirmations')
@@ -536,7 +616,12 @@ export async function runCodTimers(db: any): Promise<{
           })
           .eq('id', conf.id)
         reminders++
-      } else if (ageHours >= config.cod_reminder1_hours && conf.messages_sent < 2) {
+      } else if (
+        remindersOn &&
+        reminderCount >= 1 &&
+        ageHours >= config.cod_reminder1_hours &&
+        conf.messages_sent < 2
+      ) {
         await sendReminder(db, config, conf)
         await db
           .from('cod_confirmations')
