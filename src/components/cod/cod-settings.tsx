@@ -310,7 +310,7 @@ export function CodSettings() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Pending" value={counts.pending} icon={Clock} tone="bg-amber-500/15 text-amber-500" />
             <StatCard label="Confirmed" value={counts.confirmed} icon={CheckCircle2} tone="bg-primary/15 text-primary" />
-            <StatCard label="Cancelled" value={counts.cancel_requested} icon={XCircle} tone="bg-rose-500/15 text-rose-500" />
+            <StatCard label="Cancel Requested" value={counts.cancel_requested} icon={XCircle} tone="bg-rose-500/15 text-rose-500" />
             <StatCard label="No reply" value={counts.no_reply} icon={Clock} tone="bg-slate-500/15 text-slate-400" />
           </div>
 
@@ -385,7 +385,7 @@ export function CodSettings() {
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
                 <XCircle className="h-4 w-4 text-rose-500" />
                 <span className="font-medium text-foreground">&ldquo;NO cancelar&rdquo;</span>
-                <span className="text-muted-foreground">→ marks the order Cancelled (manual review; never auto-cancelled)</span>
+                <span className="text-muted-foreground">→ flags the order as Cancel Requested (tagged for manual review — never auto-cancelled in Shopify)</span>
               </div>
             </CardContent>
           </Card>
