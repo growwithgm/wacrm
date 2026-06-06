@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { COD_FIELD_KEYS } from '@/lib/cod/fields'
 
 // Service-role client for writes (mirrors /api/shopify/config). Lazy so a
 // missing env var doesn't crash the build.
@@ -23,14 +24,24 @@ const COD_FIELDS = [
   'cod_enabled',
   'cod_template_name',
   'cod_template_language',
+  'cod_confirm_var_map',
   'cod_thankyou_enabled',
   'cod_thankyou_template_name',
   'cod_thankyou_template_language',
+  'cod_thankyou_var_map',
   'cod_reminders_enabled',
   'cod_reminder_count',
   'cod_reminder1_hours',
   'cod_reminder2_hours',
   'cod_noreply_hours',
+  'cod_yes_message_enabled',
+  'cod_yes_message_text',
+  'cod_no_message_enabled',
+  'cod_no_message_text',
+  'cod_noreply_template_enabled',
+  'cod_noreply_template_name',
+  'cod_noreply_template_language',
+  'cod_noreply_var_map',
 ] as const
 
 const COD_STATUSES = ['pending', 'confirmed', 'cancel_requested', 'no_reply'] as const
@@ -133,8 +144,36 @@ export async function PUT(request: Request) {
           return NextResponse.json({ error: `${f} must be 0–720 hours` }, { status: 400 })
         }
         update[f] = n
+      } else if (f.endsWith('_var_map')) {
+        // Placeholder-index → order-field-key map, e.g. {"1":"order_number"}.
+        if (v == null) {
+          update[f] = {}
+        } else if (typeof v !== 'object' || Array.isArray(v)) {
+          return NextResponse.json({ error: `${f} must be an object` }, { status: 400 })
+        } else {
+          for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+            if (!/^\d+$/.test(k)) {
+              return NextResponse.json({ error: `${f}: keys must be placeholder numbers` }, { status: 400 })
+            }
+            if (typeof val !== 'string' || !COD_FIELD_KEYS.includes(val)) {
+              return NextResponse.json({ error: `${f}: "${String(val)}" is not a valid field` }, { status: 400 })
+            }
+          }
+          update[f] = v
+        }
       } else if (f.endsWith('_enabled')) {
         update[f] = Boolean(v)
+      } else if (f.endsWith('_text')) {
+        // Free-text reply bodies — allow null/empty to clear, else cap length.
+        if (v == null || v === '') {
+          update[f] = null
+        } else {
+          const s = String(v)
+          if (s.length > 1024) {
+            return NextResponse.json({ error: `${f} must be 1024 characters or fewer` }, { status: 400 })
+          }
+          update[f] = s
+        }
       } else {
         // template name / language — allow null to clear, else a trimmed string
         update[f] = v == null || v === '' ? null : String(v)
@@ -143,10 +182,11 @@ export async function PUT(request: Request) {
 
     // Validate any template names against the user's Approved templates so the
     // panel can never persist a template Meta would reject.
-    const nameFields: ('cod_template_name' | 'cod_thankyou_template_name')[] = [
-      'cod_template_name',
-      'cod_thankyou_template_name',
-    ]
+    const nameFields: (
+      | 'cod_template_name'
+      | 'cod_thankyou_template_name'
+      | 'cod_noreply_template_name'
+    )[] = ['cod_template_name', 'cod_thankyou_template_name', 'cod_noreply_template_name']
     for (const nf of nameFields) {
       const name = update[nf]
       if (typeof name === 'string' && name.length > 0) {
