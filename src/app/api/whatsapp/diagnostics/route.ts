@@ -72,6 +72,7 @@ export async function GET() {
       token_app: {
         id: token.app_id ?? null,
         name: token.application ?? null,
+        type: token.type ?? null,
         is_valid: token.is_valid ?? false,
         scopes: token.scopes ?? [],
         granular_scopes: token.granular_scopes ?? [],

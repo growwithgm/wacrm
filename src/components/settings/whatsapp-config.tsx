@@ -15,6 +15,7 @@ import {
   Webhook,
   Stethoscope,
   PhoneCall,
+  Send,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -125,6 +126,15 @@ export function WhatsAppConfig() {
   } | null>(null);
   const [loadingDiag, setLoadingDiag] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagData | null>(null);
+  const [testTo, setTestTo] = useState('');
+  const [testTplName, setTestTplName] = useState('');
+  const [testTplLang, setTestTplLang] = useState('es');
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    token_app?: { id?: string | null; name?: string | null; type?: string | null; is_valid?: boolean };
+    text?: { request: unknown; response: { ok: boolean; status: number; body: unknown } };
+    template?: { request: unknown; response: { ok: boolean; status: number; body: unknown } } | null;
+  } | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
 
@@ -349,6 +359,41 @@ export function WhatsAppConfig() {
       toast.error('Register request failed. Check your network and try again.');
     } finally {
       setRegistering(false);
+    }
+  }
+
+  async function handleTestSend() {
+    if (!testTo.trim()) {
+      toast.error('Enter a recipient phone number (one that messaged you in the last 24h for the text test).');
+      return;
+    }
+    try {
+      setTestSending(true);
+      const res = await fetch('/api/whatsapp/test-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: testTo.trim(),
+          templateName: testTplName.trim() || undefined,
+          templateLanguage: testTplLang.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Test send failed');
+        setTestResult(null);
+        return;
+      }
+      setTestResult(data);
+      if (data.text?.response?.ok) {
+        toast.success('Text send accepted by Meta — account-level sending works.');
+      } else {
+        toast.warning('Text send was rejected — see the raw error below.');
+      }
+    } catch {
+      toast.error('Test send request failed.');
+    } finally {
+      setTestSending(false);
     }
   }
 
@@ -659,6 +704,72 @@ export function WhatsAppConfig() {
                 )}
               </Button>
               {diagnostics && <DiagnosticsView data={diagnostics} />}
+            </CardContent>
+          </Card>
+
+          {/* Test send — isolate the deep #200 (account vs template) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Test send (isolate #200)</CardTitle>
+              <CardDescription>
+                Sends with the same stored token the live send path uses. The plain-text send tests
+                account-level permission (the recipient must have messaged you in the last 24h); add
+                a template name to also test a template send. Shows the exact request + Meta&apos;s
+                raw response (code, subcode, error_data, fbtrace_id).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Recipient phone (E.164)</Label>
+                  <Input placeholder="e.g. 34600111222" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-[1fr_5rem] gap-2">
+                  <div className="space-y-2">
+                    <Label>Template name (optional)</Label>
+                    <Input placeholder="e.g. cod_confermation_es_1_gn" value={testTplName} onChange={(e) => setTestTplName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Lang</Label>
+                    <Input placeholder="es" value={testTplLang} onChange={(e) => setTestTplLang(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+              <Button variant="outline" onClick={handleTestSend} disabled={testSending || !config}>
+                {testSending ? (
+                  <><Loader2 className="size-4 animate-spin" />Sending…</>
+                ) : (
+                  <><Send className="size-4" />Run test send</>
+                )}
+              </Button>
+              {testResult && (
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <DiagRow label="Token app (used by send)">
+                    {testResult.token_app?.name ?? '—'} ({testResult.token_app?.id ?? '—'}) ·{' '}
+                    {testResult.token_app?.type ?? '—'}
+                  </DiagRow>
+                  <DiagRow label="Text send">
+                    {testResult.text?.response?.ok
+                      ? 'accepted ✓'
+                      : `rejected (HTTP ${testResult.text?.response?.status ?? '—'})`}
+                  </DiagRow>
+                  {testResult.template && (
+                    <DiagRow label="Template send">
+                      {testResult.template.response?.ok
+                        ? 'accepted ✓'
+                        : `rejected (HTTP ${testResult.template.response?.status ?? '—'})`}
+                    </DiagRow>
+                  )}
+                  <DiagRaw label="text — exact request body" value={testResult.text?.request} />
+                  <DiagRaw label="text — raw Meta response" value={testResult.text?.response?.body} />
+                  {testResult.template && (
+                    <DiagRaw label="template — exact request body" value={testResult.template.request} />
+                  )}
+                  {testResult.template && (
+                    <DiagRaw label="template — raw Meta response" value={testResult.template.response?.body} />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
