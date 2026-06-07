@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyPhoneNumber, verifyWABA } from '@/lib/whatsapp/meta-api'
+import { evaluateConnection } from '@/lib/whatsapp/connection'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /**
@@ -63,12 +64,13 @@ export async function GET() {
 
       await supabase
         .from('whatsapp_config')
-        .update({ status: 'disconnected', last_checked_at: new Date().toISOString() })
+        .update({ status: 'disconnected', connection_state: 'not_connected', last_checked_at: new Date().toISOString() })
         .eq('user_id', user.id)
 
       return NextResponse.json(
         {
           connected: false,
+          state: 'not_connected',
           reason: 'token_corrupted',
           needs_reset: true,
           message:
@@ -78,59 +80,50 @@ export async function GET() {
       )
     }
 
-    // Validate phone number against Meta.
-    let phoneInfo: Awaited<ReturnType<typeof verifyPhoneNumber>>
+    // Evaluate real SEND capability from the token via debug_token — the source
+    // of truth for the 3-state status. A token can read the phone number yet
+    // still be unable to send (Meta #200); debug_token's granular scopes reveal
+    // whether whatsapp_business_messaging is granted for this WABA.
+    const result = await evaluateConnection(config.waba_id, accessToken)
+
+    // Best-effort display details — do NOT affect the computed state.
+    let phoneInfo: Awaited<ReturnType<typeof verifyPhoneNumber>> | null = null
     try {
-      phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
-
-      await supabase
-        .from('whatsapp_config')
-        .update({ status: 'disconnected', last_checked_at: new Date().toISOString() })
-        .eq('user_id', user.id)
-
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
-        },
-        { status: 200 }
-      )
+      phoneInfo = await verifyPhoneNumber({ phoneNumberId: config.phone_number_id, accessToken })
+    } catch {
+      // state already determined by debug_token
     }
-
-    // Optionally fetch WABA account name (non-blocking — failure keeps status connected).
     let wabaInfo: Awaited<ReturnType<typeof verifyWABA>> | null = null
     if (config.waba_id) {
       try {
         wabaInfo = await verifyWABA({ wabaId: config.waba_id, accessToken })
-      } catch (err) {
-        console.warn('[whatsapp/config GET] WABA name fetch failed (non-blocking):', err)
+      } catch {
+        // non-blocking
       }
     }
 
-    // Write fresh status back to DB so subsequent page loads show cached result.
+    // Persist the 3-state so the sidebar/pill read one source. Keep the legacy
+    // 2-state `status` meaningful (green/amber = configured + token valid).
     const lastCheckedAt = new Date().toISOString()
     const dbUpdate: Record<string, unknown> = {
-      status: 'connected',
+      connection_state: result.state,
+      status: result.state === 'not_connected' ? 'disconnected' : 'connected',
       last_checked_at: lastCheckedAt,
     }
     if (wabaInfo?.name) dbUpdate.waba_name = wabaInfo.name
 
-    await supabase
-      .from('whatsapp_config')
-      .update(dbUpdate)
-      .eq('user_id', user.id)
+    await supabase.from('whatsapp_config').update(dbUpdate).eq('user_id', user.id)
 
     return NextResponse.json({
-      connected: true,
+      connected: result.state === 'connected',
+      state: result.state,
+      can_send: result.state === 'connected',
+      token_valid: result.tokenValid,
+      detail: result.detail,
+      scopes: result.scopes,
       phone_info: phoneInfo,
       waba_info: wabaInfo,
+      waba_name: wabaInfo?.name ?? config.waba_name ?? null,
       last_checked_at: lastCheckedAt,
     })
   } catch (error) {
