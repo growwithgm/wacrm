@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
   Eye,
@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   RotateCcw,
   RefreshCw,
+  Webhook,
+  Stethoscope,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -52,6 +54,55 @@ function formatTimestamp(ts: string | null): string {
   }
 }
 
+interface DiagData {
+  token_app?: { id?: string | null; name?: string | null; is_valid?: boolean; scopes?: string[]; granular_scopes?: unknown };
+  waba_id?: string | null;
+  phone_number_id?: string | null;
+  verify_token?: string | null;
+  app_secret_configured?: boolean;
+  subscribed_apps?: unknown;
+  phone_numbers?: unknown;
+  phone?: unknown;
+}
+
+function DiagRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-2 text-sm">
+      <span className="font-medium text-foreground">{label}:</span>
+      <span className="break-all text-muted-foreground">{children}</span>
+    </div>
+  );
+}
+
+function DiagRaw({ label, value }: { label: string; value: unknown }) {
+  return (
+    <details className="rounded-lg border border-border bg-muted/40 p-2">
+      <summary className="cursor-pointer text-xs font-medium text-foreground">{label}</summary>
+      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-muted-foreground">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
+function DiagnosticsView({ data }: { data: DiagData }) {
+  const app = data.token_app ?? {};
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <DiagRow label="Token app">{app.name ?? '—'} ({app.id ?? '—'})</DiagRow>
+      <DiagRow label="Token valid">{app.is_valid ? 'yes' : 'no'}</DiagRow>
+      <DiagRow label="WABA ID">{data.waba_id ?? '—'}</DiagRow>
+      <DiagRow label="Phone number ID">{data.phone_number_id ?? '—'}</DiagRow>
+      <DiagRow label="Webhook verify token">{data.verify_token ?? '—'}</DiagRow>
+      <DiagRow label="META_APP_SECRET configured">{data.app_secret_configured ? 'yes' : 'no'}</DiagRow>
+      <DiagRaw label="subscribed_apps (raw Meta response)" value={data.subscribed_apps} />
+      <DiagRaw label="phone_numbers under WABA (raw)" value={data.phone_numbers} />
+      <DiagRaw label="phone number (raw)" value={data.phone} />
+      <DiagRaw label="token granular_scopes" value={app.granular_scopes} />
+    </div>
+  );
+}
+
 export function WhatsAppConfig() {
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
@@ -65,6 +116,9 @@ export function WhatsAppConfig() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [loadingDiag, setLoadingDiag] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<DiagData | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
 
@@ -236,6 +290,48 @@ export function WhatsAppConfig() {
     }
   }
 
+  async function handleSubscribe() {
+    try {
+      setSubscribing(true);
+      const res = await fetch('/api/whatsapp/subscribe', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to subscribe');
+        return;
+      }
+      const apps = Array.isArray(data.subscribed_apps) ? data.subscribed_apps : [];
+      if (data.success && apps.length > 0) {
+        toast.success('Subscribed — inbound webhooks are now active for this WABA.');
+      } else if (data.success) {
+        toast.warning('Meta returned success but no app is listed yet. Run diagnostics to confirm.');
+      } else {
+        toast.error('Meta did not confirm the subscription.');
+      }
+      await wa.refresh();
+    } catch {
+      toast.error('Subscribe request failed. Check your network and try again.');
+    } finally {
+      setSubscribing(false);
+    }
+  }
+
+  async function handleRunDiagnostics() {
+    try {
+      setLoadingDiag(true);
+      const res = await fetch('/api/whatsapp/diagnostics');
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Diagnostics failed');
+        return;
+      }
+      setDiagnostics(data as DiagData);
+    } catch {
+      toast.error('Diagnostics request failed.');
+    } finally {
+      setLoadingDiag(false);
+    }
+  }
+
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success('Webhook URL copied to clipboard');
@@ -320,6 +416,38 @@ export function WhatsAppConfig() {
                       ? 'Your WhatsApp Business account can send messages.'
                       : 'Configure your Meta API credentials below to connect.')}
                 </p>
+                {/* Inbound (webhook subscription) — independent of send capability:
+                    a token can send while inbound still won't arrive until the
+                    app is subscribed to the WABA. */}
+                {wa.state !== 'not_connected' && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium">
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
+                        wa.subscribed === true
+                          ? 'bg-primary'
+                          : wa.subscribed === false
+                            ? 'bg-amber-500'
+                            : 'bg-muted-foreground',
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        wa.subscribed === true
+                          ? 'text-primary'
+                          : wa.subscribed === false
+                            ? 'text-amber-600'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      {wa.subscribed === true
+                        ? 'Inbound: subscribed to webhooks'
+                        : wa.subscribed === false
+                          ? 'Inbound: not subscribed — incoming messages won’t arrive. Click “Subscribe to webhooks”.'
+                          : 'Inbound: subscription status unknown'}
+                    </span>
+                  </p>
+                )}
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   Last checked: {wa.loading ? 'Verifying…' : formatTimestamp(wa.lastCheckedAt)}
                 </p>
@@ -410,7 +538,7 @@ export function WhatsAppConfig() {
               <CardTitle className="text-base">Webhook Configuration</CardTitle>
               <CardDescription>Use this URL as your webhook callback in the Meta App Dashboard.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Webhook Callback URL</Label>
                 <div className="flex gap-2">
@@ -420,6 +548,43 @@ export function WhatsAppConfig() {
                   </Button>
                 </div>
               </div>
+              <div className="space-y-2 border-t border-border pt-4">
+                <Label>Inbound subscription</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="outline" onClick={handleSubscribe} disabled={subscribing || !config}>
+                    {subscribing ? (
+                      <><Loader2 className="size-4 animate-spin" />Subscribing…</>
+                    ) : (
+                      <><Webhook className="size-4" />Subscribe to webhooks</>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Subscribes this app to your WhatsApp Business Account so inbound messages reach
+                    Wasify. Required once per WABA — without it, no incoming messages arrive.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Connection diagnostics */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Connection diagnostics</CardTitle>
+              <CardDescription>
+                Live, raw data from Meta for this token — app identity, webhook subscription, and
+                phone-number access. Use it to pin down inbound / outbound (#200) issues.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="outline" onClick={handleRunDiagnostics} disabled={loadingDiag || !config}>
+                {loadingDiag ? (
+                  <><Loader2 className="size-4 animate-spin" />Running…</>
+                ) : (
+                  <><Stethoscope className="size-4" />Run diagnostics</>
+                )}
+              </Button>
+              {diagnostics && <DiagnosticsView data={diagnostics} />}
             </CardContent>
           </Card>
 
