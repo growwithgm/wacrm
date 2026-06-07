@@ -14,6 +14,8 @@ interface WaPayload {
   waba_info?: { name?: string } | null
   last_checked_at?: string | null
   needs_reset?: boolean
+  subscribed?: boolean | null
+  app_name?: string | null
 }
 
 export interface WaConnection {
@@ -22,6 +24,9 @@ export interface WaConnection {
   wabaName: string | null
   lastCheckedAt: string | null
   needsReset: boolean
+  /** Inbound: is the app subscribed to the WABA's webhooks? null = unknown. */
+  subscribed: boolean | null
+  appName: string | null
   loading: boolean
   /** Force a fresh live check (used by "Test API Connection"); returns the payload. */
   refresh: () => Promise<WaPayload>
@@ -93,6 +98,8 @@ export function useWhatsAppConnection(): WaConnection {
     wabaName: data?.waba_name ?? data?.waba_info?.name ?? null,
     lastCheckedAt: data?.last_checked_at ?? null,
     needsReset: !!data?.needs_reset,
+    subscribed: data?.subscribed ?? null,
+    appName: data?.app_name ?? null,
     loading,
     refresh,
   }

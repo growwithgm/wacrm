@@ -9,7 +9,7 @@
  *   not_connected  — token invalid / revoked / expired
  */
 
-import { debugToken, type MetaDebugTokenData } from './meta-api'
+import { debugToken, getSubscribedApps, type MetaDebugTokenData } from './meta-api'
 
 export type WaConnectionState = 'connected' | 'cannot_send' | 'not_connected'
 
@@ -18,6 +18,16 @@ export interface WaConnectionResult {
   tokenValid: boolean
   detail: string
   scopes: string[]
+  /** The Meta app the token belongs to (from debug_token). */
+  appId?: string | null
+  appName?: string | null
+  /**
+   * Whether that app is subscribed to this WABA's webhooks (inbound). `null`
+   * when undeterminable (token invalid, no WABA, or the lookup failed).
+   * Independent of `state`, which is about SEND capability — a token can send
+   * yet inbound still won't arrive until the app is subscribed to the WABA.
+   */
+  subscribed?: boolean | null
 }
 
 const MESSAGING_SCOPE = 'whatsapp_business_messaging'
@@ -77,11 +87,32 @@ export function deriveStateFromDebug(
   }
 }
 
-/** Live evaluation: introspect the token, then derive the 3-state. */
+/**
+ * Live evaluation: introspect the token (3-state SEND capability), then check
+ * whether the token's app is subscribed to the WABA's webhooks (INBOUND).
+ */
 export async function evaluateConnection(
   wabaId: string | null | undefined,
   accessToken: string,
 ): Promise<WaConnectionResult> {
   const data = await debugToken({ token: accessToken })
-  return deriveStateFromDebug(data, wabaId)
+  const base = deriveStateFromDebug(data, wabaId)
+  const appId = data.app_id ?? null
+  const appName = data.application ?? null
+
+  let subscribed: boolean | null = null
+  if (base.tokenValid && wabaId) {
+    try {
+      const { data: apps } = await getSubscribedApps({ wabaId, accessToken })
+      const list = apps ?? []
+      // Match the token's own app when we know it; otherwise any subscription.
+      subscribed = appId
+        ? list.some((a) => a.whatsapp_business_api_data?.id === appId)
+        : list.length > 0
+    } catch {
+      subscribed = null // e.g. token lacks whatsapp_business_management
+    }
+  }
+
+  return { ...base, appId, appName, subscribed }
 }

@@ -24,16 +24,50 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    type?: string
+    error_data?: unknown
+    fbtrace_id?: string
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
+  let raw: MetaErrorResponse | null = null
   try {
-    const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    raw = (await response.json()) as MetaErrorResponse
   } catch {
     // response body wasn't JSON — keep the fallback
+  }
+  const e = raw?.error
+  if (e) {
+    // Log the FULL raw Meta error so the real cause of #200 etc. is visible:
+    // code, error_subcode, error_data, fbtrace_id.
+    console.error(
+      '[meta-api] Meta error:',
+      JSON.stringify({
+        http_status: response.status,
+        code: e.code,
+        error_subcode: e.error_subcode,
+        type: e.type,
+        message: e.message,
+        error_data: e.error_data,
+        fbtrace_id: e.fbtrace_id,
+      }),
+    )
+    // Enrich the thrown message (flows into the inbox failure capture + logs).
+    message = [
+      e.message ?? fallback,
+      e.code != null ? `(#${e.code}${e.error_subcode != null ? `/${e.error_subcode}` : ''})` : '',
+      e.fbtrace_id ? `fbtrace_id=${e.fbtrace_id}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  } else {
+    console.error('[meta-api] Meta error (non-JSON):', { http_status: response.status, fallback })
   }
   throw new Error(message)
 }
@@ -128,6 +162,59 @@ export async function debugToken(args: { token: string }): Promise<MetaDebugToke
     }
   }
   return json?.data ?? {}
+}
+
+// ============================================================
+// Webhook subscription (WABA ↔ app) + raw diagnostics
+// ============================================================
+
+export interface SubscribedApp {
+  whatsapp_business_api_data?: { id?: string; name?: string; link?: string }
+}
+
+/** GET /{wabaId}/subscribed_apps — which apps receive this WABA's webhooks. */
+export async function getSubscribedApps(args: {
+  wabaId: string
+  accessToken: string
+}): Promise<{ data: SubscribedApp[] }> {
+  const { wabaId, accessToken } = args
+  const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  if (!response.ok) await throwMetaError(response, `Meta subscribed_apps error: ${response.status}`)
+  return response.json()
+}
+
+/**
+ * POST /{wabaId}/subscribed_apps — subscribe the token's app to this WABA so
+ * inbound messages start arriving at our webhook. Meta returns { success: true }.
+ */
+export async function subscribeApp(args: {
+  wabaId: string
+  accessToken: string
+}): Promise<{ success: boolean }> {
+  const { wabaId, accessToken } = args
+  const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) await throwMetaError(response, `Meta subscribe error: ${response.status}`)
+  return response.json()
+}
+
+/**
+ * Raw GET against the Graph API — returns the status + parsed body WITHOUT
+ * throwing, so diagnostics can surface Meta's exact response (including the
+ * full error JSON for a #200 / #100). `path` is everything after the version.
+ */
+export async function metaRawGet(
+  path: string,
+  accessToken: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const url = `${META_API_BASE}/${path}`
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  const body = await response.json().catch(() => null)
+  return { ok: response.ok, status: response.status, body }
 }
 
 // ============================================================

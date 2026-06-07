@@ -121,6 +121,10 @@ export async function GET() {
       token_valid: result.tokenValid,
       detail: result.detail,
       scopes: result.scopes,
+      // Inbound: is the token's app subscribed to this WABA's webhooks?
+      subscribed: result.subscribed ?? null,
+      app_id: result.appId ?? null,
+      app_name: result.appName ?? null,
       phone_info: phoneInfo,
       waba_info: wabaInfo,
       waba_name: wabaInfo?.name ?? config.waba_name ?? null,
