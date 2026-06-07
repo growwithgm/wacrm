@@ -92,6 +92,44 @@ export async function verifyPhoneNumber(
   return response.json()
 }
 
+export interface MetaDebugTokenData {
+  app_id?: string
+  type?: string
+  application?: string
+  expires_at?: number
+  data_access_expires_at?: number
+  is_valid?: boolean
+  scopes?: string[]
+  granular_scopes?: { scope: string; target_ids?: string[] }[]
+  error?: { code?: number; message?: string }
+}
+
+/**
+ * Introspect an access token via Meta's debug_token endpoint. We pass the token
+ * as both `input_token` and `access_token` (a token can debug itself within its
+ * own app), so this works for the stored System User token without app creds.
+ *
+ * On an HTTP error (e.g. a revoked token → #190) we return a normalized
+ * `{ is_valid: false, error }` instead of throwing, so the connection
+ * evaluator can map every outcome to a state.
+ */
+export async function debugToken(args: { token: string }): Promise<MetaDebugTokenData> {
+  const { token } = args
+  const url = `${META_API_BASE}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`
+  const response = await fetch(url)
+  const json = (await response.json().catch(() => ({}))) as {
+    data?: MetaDebugTokenData
+    error?: { code?: number; message?: string }
+  }
+  if (!response.ok) {
+    return {
+      is_valid: false,
+      error: { message: json?.error?.message || `Meta debug_token error: ${response.status}`, code: json?.error?.code },
+    }
+  }
+  return json?.data ?? {}
+}
+
 // ============================================================
 // Sending
 // ============================================================

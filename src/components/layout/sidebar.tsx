@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useWhatsAppConnection, WA_STATE_UI } from "@/hooks/use-whatsapp-connection";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -115,6 +116,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
   const totalUnread = useTotalUnread();
+  const wa = useWhatsAppConnection();
 
   useEffect(() => {
     onClose?.();
@@ -223,8 +225,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* API status card */}
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
+        {/* API status card — honest 3-state WhatsApp connection (shared source) */}
+        <Link
+          href="/settings?tab=whatsapp"
+          className="mt-3 block rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 transition hover:bg-white/[0.07]"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-soft-2 text-sidebar-primary">
               <ShieldCheck className="h-[18px] w-[18px]" />
@@ -233,13 +238,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <p className="font-heading text-[13px] font-extrabold text-white">
                 API status
               </p>
-              <p className="flex items-center gap-1.5 text-[11.5px] text-white/50">
-                <span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
-                All systems live
+              <p className="flex items-center gap-1.5 text-[11.5px] text-white/60">
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    WA_STATE_UI[wa.state].dot,
+                  )}
+                />
+                <span className="truncate">{WA_STATE_UI[wa.state].label}</span>
               </p>
             </div>
           </div>
-        </div>
+        </Link>
 
         {/* User section */}
         <div className="mt-2.5 shrink-0">
