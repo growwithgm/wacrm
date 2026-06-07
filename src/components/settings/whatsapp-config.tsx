@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Webhook,
   Stethoscope,
+  PhoneCall,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -117,6 +118,11 @@ export function WhatsAppConfig() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registerResult, setRegisterResult] = useState<{
+    register?: { ok: boolean; status: number; body: unknown };
+    phone?: { ok: boolean; status: number; body: unknown };
+  } | null>(null);
   const [loadingDiag, setLoadingDiag] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagData | null>(null);
   const [showToken, setShowToken] = useState(false);
@@ -312,6 +318,37 @@ export function WhatsAppConfig() {
       toast.error('Subscribe request failed. Check your network and try again.');
     } finally {
       setSubscribing(false);
+    }
+  }
+
+  async function handleRegister() {
+    try {
+      setRegistering(true);
+      const res = await fetch('/api/whatsapp/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: '000000' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Register failed');
+        setRegisterResult(null);
+        return;
+      }
+      setRegisterResult({ register: data.register, phone: data.phone });
+      const registered = data.register?.ok && (data.register?.body as { success?: boolean } | null)?.success;
+      const status = (data.phone?.body as { status?: string } | null)?.status;
+      if (registered) {
+        toast.success(`Number registered to this app${status ? ` (status: ${status})` : ''}. Try sending now.`);
+      } else {
+        const metaErr = (data.register?.body as { error?: { message?: string } } | null)?.error?.message;
+        toast.error(metaErr || 'Meta did not confirm registration — see the response below.');
+      }
+      await wa.refresh();
+    } catch {
+      toast.error('Register request failed. Check your network and try again.');
+    } finally {
+      setRegistering(false);
     }
   }
 
@@ -564,6 +601,43 @@ export function WhatsAppConfig() {
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Phone number registration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Phone number registration</CardTitle>
+              <CardDescription>
+                Registers this phone number to our app on the WhatsApp Cloud API — claims it for
+                &ldquo;watti crm&rdquo; even if it was previously connected to another app. Two-step
+                verification off uses PIN <code className="text-xs">000000</code>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button variant="outline" onClick={handleRegister} disabled={registering || !config}>
+                {registering ? (
+                  <><Loader2 className="size-4 animate-spin" />Registering…</>
+                ) : (
+                  <><PhoneCall className="size-4" />Register phone number</>
+                )}
+              </Button>
+              {registerResult && (
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <DiagRow label="Register result">
+                    {(registerResult.register?.body as { success?: boolean } | null)?.success
+                      ? 'success ✓'
+                      : `failed (HTTP ${registerResult.register?.status ?? '—'})`}
+                  </DiagRow>
+                  <DiagRow label="Phone status">
+                    {(registerResult.phone?.body as { status?: string } | null)?.status ?? '—'}
+                    {' · '}
+                    {(registerResult.phone?.body as { account_mode?: string } | null)?.account_mode ?? '—'}
+                  </DiagRow>
+                  <DiagRaw label="register (raw Meta response)" value={registerResult.register?.body} />
+                  <DiagRaw label="phone after register (raw)" value={registerResult.phone?.body} />
+                </div>
+              )}
             </CardContent>
           </Card>
 

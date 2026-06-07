@@ -217,6 +217,26 @@ export async function metaRawGet(
   return { ok: response.ok, status: response.status, body }
 }
 
+/**
+ * Raw POST against the Graph API — returns status + parsed body WITHOUT throwing,
+ * so callers (e.g. phone-number /register) can surface Meta's exact response,
+ * success or error, to the operator.
+ */
+export async function metaRawPost(
+  path: string,
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const url = `${META_API_BASE}/${path}`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
+  })
+  const respBody = await response.json().catch(() => null)
+  return { ok: response.ok, status: response.status, body: respBody }
+}
+
 // ============================================================
 // Sending
 // ============================================================
