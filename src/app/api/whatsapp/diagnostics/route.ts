@@ -55,18 +55,33 @@ export async function GET() {
     const wabaId = config.waba_id
     const phoneId = config.phone_number_id
 
-    const [subscribedApps, phoneNumbers, phone] = await Promise.all([
+    const [subscribedApps, phoneNumbers, phone, waba] = await Promise.all([
       wabaId ? metaRawGet(`${wabaId}/subscribed_apps`, accessToken) : Promise.resolve(null),
       wabaId
         ? metaRawGet(
-            `${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status,platform_type`,
+            `${wabaId}/phone_numbers?fields=id,display_phone_number,status,name_status,code_verification_status,platform_type,quality_rating`,
             accessToken,
           )
         : Promise.resolve(null),
       phoneId
-        ? metaRawGet(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating`, accessToken)
+        ? metaRawGet(
+            `${phoneId}?fields=id,display_phone_number,verified_name,status,name_status,code_verification_status,quality_rating,platform_type,account_mode,is_official_business_account,messaging_limit_tier,certificate,throughput,last_onboarded_time`,
+            accessToken,
+          )
+        : Promise.resolve(null),
+      // WABA-level health/ownership — the deciding fields when two different
+      // apps both #200 on the same WABA (account_review_status, ownership_type,
+      // on_behalf_of_business_info, health_status.can_send_message).
+      wabaId
+        ? metaRawGet(
+            `${wabaId}?fields=id,name,account_review_status,business_verification_status,ownership_type,on_behalf_of_business_info,primary_business_location,health_status,timezone_id`,
+            accessToken,
+          )
         : Promise.resolve(null),
     ])
+    if (waba && !waba.ok) {
+      console.error('[whatsapp/diagnostics] WABA fetch error:', JSON.stringify(waba.body))
+    }
 
     return NextResponse.json({
       token_app: {
@@ -84,6 +99,7 @@ export async function GET() {
       subscribed_apps: subscribedApps,
       phone_numbers: phoneNumbers,
       phone,
+      waba,
     })
   } catch (error) {
     console.error('[whatsapp/diagnostics] error:', error)
