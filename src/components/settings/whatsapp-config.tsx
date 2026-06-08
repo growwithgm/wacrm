@@ -56,15 +56,22 @@ function formatTimestamp(ts: string | null): string {
   }
 }
 
+interface RawResp {
+  ok?: boolean;
+  status?: number;
+  body?: unknown;
+}
+
 interface DiagData {
-  token_app?: { id?: string | null; name?: string | null; is_valid?: boolean; scopes?: string[]; granular_scopes?: unknown };
+  token_app?: { id?: string | null; name?: string | null; type?: string | null; is_valid?: boolean; scopes?: string[]; granular_scopes?: unknown };
   waba_id?: string | null;
   phone_number_id?: string | null;
   verify_token?: string | null;
   app_secret_configured?: boolean;
-  subscribed_apps?: unknown;
-  phone_numbers?: unknown;
-  phone?: unknown;
+  subscribed_apps?: RawResp | null;
+  phone_numbers?: RawResp | null;
+  phone?: RawResp | null;
+  waba?: RawResp | null;
 }
 
 function DiagRow({ label, children }: { label: string; children: ReactNode }) {
@@ -89,17 +96,43 @@ function DiagRaw({ label, value }: { label: string; value: unknown }) {
 
 function DiagnosticsView({ data }: { data: DiagData }) {
   const app = data.token_app ?? {};
+  const phoneBody = (data.phone?.body ?? {}) as {
+    status?: string;
+    name_status?: string;
+    account_mode?: string;
+    code_verification_status?: string;
+    platform_type?: string;
+  };
+  const wabaBody = (data.waba?.body ?? {}) as {
+    ownership_type?: string;
+    account_review_status?: string;
+    business_verification_status?: string;
+    on_behalf_of_business_info?: unknown;
+    health_status?: { can_send_message?: string };
+  };
   return (
     <div className="space-y-2 rounded-lg border border-border p-3">
-      <DiagRow label="Token app">{app.name ?? '—'} ({app.id ?? '—'})</DiagRow>
+      <DiagRow label="Token app">
+        {app.name ?? '—'} ({app.id ?? '—'}) · {app.type ?? '—'}
+      </DiagRow>
       <DiagRow label="Token valid">{app.is_valid ? 'yes' : 'no'}</DiagRow>
-      <DiagRow label="WABA ID">{data.waba_id ?? '—'}</DiagRow>
-      <DiagRow label="Phone number ID">{data.phone_number_id ?? '—'}</DiagRow>
+      <DiagRow label="Phone status">
+        {phoneBody.status ?? '—'} · name_status {phoneBody.name_status ?? '—'} · account_mode {phoneBody.account_mode ?? '—'} · platform {phoneBody.platform_type ?? '—'}
+      </DiagRow>
+      <DiagRow label="WABA review">
+        account_review {wabaBody.account_review_status ?? '—'} · business_verification {wabaBody.business_verification_status ?? '—'}
+      </DiagRow>
+      <DiagRow label="WABA ownership">{wabaBody.ownership_type ?? '—'}</DiagRow>
+      <DiagRow label="Controlled by another business (on_behalf_of)">
+        {wabaBody.on_behalf_of_business_info ? 'YES — another business still controls this WABA' : 'no'}
+      </DiagRow>
+      <DiagRow label="Health · can_send_message">{wabaBody.health_status?.can_send_message ?? '—'}</DiagRow>
       <DiagRow label="Webhook verify token">{data.verify_token ?? '—'}</DiagRow>
       <DiagRow label="META_APP_SECRET configured">{data.app_secret_configured ? 'yes' : 'no'}</DiagRow>
-      <DiagRaw label="subscribed_apps (raw Meta response)" value={data.subscribed_apps} />
-      <DiagRaw label="phone_numbers under WABA (raw)" value={data.phone_numbers} />
-      <DiagRaw label="phone number (raw)" value={data.phone} />
+      <DiagRaw label="WABA details — raw (ownership / review / health_status)" value={data.waba} />
+      <DiagRaw label="phone number — raw (status / name_status / account_mode)" value={data.phone} />
+      <DiagRaw label="phone_numbers under WABA — raw" value={data.phone_numbers} />
+      <DiagRaw label="subscribed_apps — raw" value={data.subscribed_apps} />
       <DiagRaw label="token granular_scopes" value={app.granular_scopes} />
     </div>
   );
