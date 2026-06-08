@@ -260,6 +260,9 @@ export async function sendTextMessage(
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, text, contextMessageId } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  // Log the exact endpoint the real send hits, so the runtime phone_number_id
+  // is verifiable (rules out sending from a different number than configured).
+  console.log('[meta-api] POST', url, '(text)')
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -339,9 +342,10 @@ export async function sendTemplateMessage(
     body.context = { message_id: contextMessageId }
   }
 
-  // Log the exact template payload we send Meta. The #1 template-send bug is
-  // a name/language mismatch (Meta #132001 "Template name does not exist in
-  // the translation") — this makes the name + language.code visible.
+  // Log the exact endpoint + template payload we send Meta. The endpoint makes
+  // the runtime phone_number_id verifiable; the payload makes a name/language
+  // mismatch (#132001) visible.
+  console.log('[meta-api] POST', url, '(template)')
   console.log('[meta-api] sendTemplate payload:', JSON.stringify(template))
 
   const response = await fetch(url, {
