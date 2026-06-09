@@ -179,7 +179,7 @@ export default function BroadcastDetailPage() {
         if (recsError) throw recsError;
         setRecipients(recs ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load broadcast');
+        setError(err instanceof Error ? err.message : 'Failed to load campaign');
       } finally {
         setLoading(false);
       }
@@ -239,7 +239,7 @@ export default function BroadcastDetailPage() {
       toast.error(`Failed to delete: ${delErr.message}`);
       return;
     }
-    toast.success('Broadcast deleted');
+    toast.success('Campaign deleted');
     router.push('/broadcasts');
   }
 
@@ -254,9 +254,9 @@ export default function BroadcastDetailPage() {
   if (error || !broadcast) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400">{error ?? 'Broadcast not found'}</p>
+        <p className="text-sm text-red-400">{error ?? 'Campaign not found'}</p>
         <Button variant="outline" onClick={() => router.push('/broadcasts')}>
-          Back to Broadcasts
+          Back to Campaigns
         </Button>
       </div>
     );
@@ -309,7 +309,7 @@ export default function BroadcastDetailPage() {
             funnel inconsistent. */}
         {confirmDelete ? (
           <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">Delete this broadcast?</span>
+            <span className="text-red-300">Delete this campaign?</span>
             <Button
               variant="outline"
               size="sm"
@@ -336,7 +336,7 @@ export default function BroadcastDetailPage() {
             onClick={() => setConfirmDelete(true)}
             title={
               broadcast.status === 'sending'
-                ? 'Cannot delete while a broadcast is actively sending'
+                ? 'Cannot delete while a campaign is actively sending'
                 : 'Delete this broadcast'
             }
             className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
