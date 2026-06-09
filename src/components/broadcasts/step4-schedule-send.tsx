@@ -95,13 +95,13 @@ export function Step4ScheduleSend({
       <div>
         <h2 className="text-lg font-semibold text-foreground">Review & Send</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Name your broadcast, review the details, and send.
+          Name your campaign, review the details, and send.
         </p>
       </div>
 
       {/* Broadcast Name */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-foreground">Broadcast Name</label>
+        <label className="mb-1.5 block text-sm font-medium text-foreground">Campaign Name</label>
         <Input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -148,7 +148,7 @@ export function Step4ScheduleSend({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <p className="text-sm font-medium text-foreground">Sending broadcast...</p>
+              <p className="text-sm font-medium text-foreground">Sending campaign...</p>
             </div>
             <span className="text-xs font-medium text-primary">{progress}%</span>
           </div>
@@ -195,13 +195,13 @@ export function Step4ScheduleSend({
             }
           >
             <Send className="h-4 w-4" />
-            Send Broadcast
+            Send Campaign
           </DialogTrigger>
           <DialogContent className="border-border bg-card sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-foreground">Confirm Broadcast</DialogTitle>
+              <DialogTitle className="text-foreground">Confirm Campaign</DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
+                You are about to send this campaign to{' '}
                 <span className="font-medium text-foreground">{estimatedReach.toLocaleString()}</span>{' '}
                 contacts using the{' '}
                 <span className="font-medium text-foreground">{template.name}</span> template.
