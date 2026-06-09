@@ -58,6 +58,10 @@ interface CodConfig {
   cod_yes_message_text: string
   cod_no_message_enabled: boolean
   cod_no_message_text: string
+  cod_cancel_template_enabled: boolean
+  cod_cancel_template_name: string | null
+  cod_cancel_template_language: string | null
+  cod_cancel_var_map: VarMap
   cod_noreply_template_enabled: boolean
   cod_noreply_template_name: string | null
   cod_noreply_template_language: string | null
@@ -68,7 +72,9 @@ interface CodCounts {
   pending: number
   confirmed: number
   cancel_requested: number
+  cancelled: number
   no_reply: number
+  no_reply_cancelled: number
 }
 
 interface ApprovedTpl {
@@ -97,6 +103,10 @@ const DEFAULTS: CodConfig = {
   cod_yes_message_text: '',
   cod_no_message_enabled: false,
   cod_no_message_text: '',
+  cod_cancel_template_enabled: false,
+  cod_cancel_template_name: null,
+  cod_cancel_template_language: null,
+  cod_cancel_var_map: {},
   cod_noreply_template_enabled: false,
   cod_noreply_template_name: null,
   cod_noreply_template_language: null,
@@ -248,7 +258,9 @@ export function CodSettings() {
     pending: 0,
     confirmed: 0,
     cancel_requested: 0,
+    cancelled: 0,
     no_reply: 0,
+    no_reply_cancelled: 0,
   })
   const [templates, setTemplates] = useState<ApprovedTpl[]>([])
 
@@ -316,6 +328,11 @@ export function CodSettings() {
           cod_yes_message_text: c.cod_yes_message_text ?? '',
           cod_no_message_enabled: c.cod_no_message_enabled ?? DEFAULTS.cod_no_message_enabled,
           cod_no_message_text: c.cod_no_message_text ?? '',
+          cod_cancel_template_enabled:
+            c.cod_cancel_template_enabled ?? DEFAULTS.cod_cancel_template_enabled,
+          cod_cancel_template_name: c.cod_cancel_template_name ?? null,
+          cod_cancel_template_language: c.cod_cancel_template_language ?? null,
+          cod_cancel_var_map: c.cod_cancel_var_map ?? {},
           cod_noreply_template_enabled:
             c.cod_noreply_template_enabled ?? DEFAULTS.cod_noreply_template_enabled,
           cod_noreply_template_name: c.cod_noreply_template_name ?? null,
@@ -351,6 +368,10 @@ export function CodSettings() {
     }
     if (config.cod_no_message_enabled && !config.cod_no_message_text.trim()) {
       toast.error('Enter the “NO” reply text or turn it off.')
+      return
+    }
+    if (config.cod_cancel_template_enabled && !config.cod_cancel_template_name) {
+      toast.error('Pick a cancel template (Reply responses) or turn it off.')
       return
     }
     if (config.cod_noreply_template_enabled && !config.cod_noreply_template_name) {
@@ -417,8 +438,8 @@ export function CodSettings() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Pending" value={counts.pending} icon={Clock} tone="bg-amber-500/15 text-amber-500" />
             <StatCard label="Confirmed" value={counts.confirmed} icon={CheckCircle2} tone="bg-primary/15 text-primary" />
-            <StatCard label="Cancel Requested" value={counts.cancel_requested} icon={XCircle} tone="bg-rose-500/15 text-rose-500" />
-            <StatCard label="No reply" value={counts.no_reply} icon={Clock} tone="bg-slate-500/15 text-slate-400" />
+            <StatCard label="Cancelled" value={counts.cancelled + counts.cancel_requested} icon={XCircle} tone="bg-rose-500/15 text-rose-500" />
+            <StatCard label="No-reply cancelled" value={counts.no_reply_cancelled + counts.no_reply} icon={Clock} tone="bg-slate-500/15 text-slate-400" />
           </div>
 
           {/* Master toggle */}
@@ -683,6 +704,45 @@ export function CodSettings() {
                     value={config.cod_no_message_text}
                     onChange={(e) => set('cod_no_message_text', e.target.value)}
                   />
+                )}
+              </div>
+
+              {/* On "NO cancelar" — approved template (cancel acknowledgement) */}
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-rose-500" />
+                    <span className="text-sm font-medium text-foreground">
+                      On &ldquo;NO cancelar&rdquo; — approved template
+                    </span>
+                  </div>
+                  <Switch
+                    checked={config.cod_cancel_template_enabled}
+                    onCheckedChange={(v) => set('cod_cancel_template_enabled', v)}
+                  />
+                </div>
+                {config.cod_cancel_template_enabled && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Sent when the customer replies NO — flips the order to Cancelled.
+                    </p>
+                    <ApprovedTemplateSelect
+                      templates={templates}
+                      name={config.cod_cancel_template_name}
+                      language={config.cod_cancel_template_language}
+                      onChange={(name, language) => {
+                        set('cod_cancel_template_name', name)
+                        set('cod_cancel_template_language', language)
+                      }}
+                    />
+                    <VariableMapping
+                      templates={templates}
+                      name={config.cod_cancel_template_name}
+                      language={config.cod_cancel_template_language}
+                      varMap={config.cod_cancel_var_map}
+                      onChange={(next) => set('cod_cancel_var_map', next)}
+                    />
+                  </div>
                 )}
               </div>
 

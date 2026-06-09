@@ -2,9 +2,9 @@
  * COD (cash-on-delivery) confirmation engine.
  *
  * State machine (see migration 019):
- *   pending → confirmed         (customer replies SÍ/yes)
- *           → cancel_requested  (customer replies NO)
- *           → no_reply          (72h of silence; tag only, never auto-cancel)
+ *   pending → confirmed           (customer replies SÍ/yes)
+ *           → cancelled           (customer replies NO)
+ *           → no_reply_cancelled  (72h of silence; Phase 2 timers)
  *
  * Triggered ONLY from the live orders/create webhook — startCodConfirmation
  * is never called from a backfill/scheduled sync, so backfilled orders can
@@ -667,8 +667,8 @@ export async function handleCodReply(
         }
       }
     } else {
-      // NO → cancel requested. Remove pending + add cancel tag (manual review;
-      // we never auto-cancel in Shopify).
+      // NO → cancelled. Flip the pending tag to the cancel tag (manual review;
+      // we never auto-cancel the Shopify order itself).
       if (token && config) {
         try {
           await removeOrderTags(config.store_domain, token, sid, [config.cod_tag_pending])
@@ -680,7 +680,7 @@ export async function handleCodReply(
       await db
         .from('cod_confirmations')
         .update({
-          status: 'cancel_requested',
+          status: 'cancelled',
           reply_text: text,
           replied_at: new Date().toISOString(),
         })
@@ -688,8 +688,40 @@ export async function handleCodReply(
       if (conf.order_id) {
         await db
           .from('shopify_orders')
-          .update({ cod_status: 'cancel_requested' })
+          .update({ cod_status: 'cancelled' })
           .eq('id', conf.order_id)
+      }
+
+      // Send the cancel-acknowledgement template (the NO-outcome message).
+      // Reuses sendCodTemplate (resolveTemplate applies). Best-effort.
+      if (
+        config?.cod_cancel_template_enabled &&
+        config.cod_cancel_template_name &&
+        conf.conversation_id &&
+        conf.phone
+      ) {
+        try {
+          const params = await paramsForTemplate(
+            db,
+            userId,
+            config.cod_cancel_template_name,
+            config.cod_cancel_var_map,
+            fieldsFromConf(conf),
+          )
+          await sendCodTemplate(
+            db,
+            userId,
+            conf.conversation_id,
+            conf.contact_id,
+            conf.phone,
+            config.cod_cancel_template_name,
+            config.cod_cancel_template_language || config.cod_template_language,
+            params,
+          )
+          console.log('[cod] cancel template sent', sid)
+        } catch (err) {
+          console.error('[cod] cancel template send failed:', err)
+        }
       }
 
       // Part B — optional free-text cancel reply (inside the 24h window).
@@ -713,7 +745,7 @@ export async function handleCodReply(
           console.error('[cod] no message send failed:', err)
         }
       }
-      console.log('[cod] cancel requested', sid)
+      console.log('[cod] cancelled', sid)
     }
   } catch (err) {
     console.error('[cod] handleCodReply error:', err)

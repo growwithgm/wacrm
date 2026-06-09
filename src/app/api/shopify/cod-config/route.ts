@@ -38,13 +38,26 @@ const COD_FIELDS = [
   'cod_yes_message_text',
   'cod_no_message_enabled',
   'cod_no_message_text',
+  'cod_cancel_template_enabled',
+  'cod_cancel_template_name',
+  'cod_cancel_template_language',
+  'cod_cancel_var_map',
   'cod_noreply_template_enabled',
   'cod_noreply_template_name',
   'cod_noreply_template_language',
   'cod_noreply_var_map',
 ] as const
 
-const COD_STATUSES = ['pending', 'confirmed', 'cancel_requested', 'no_reply'] as const
+// Statuses counted for the live panel. Includes the legacy values
+// (cancel_requested, no_reply) so pre-flow rows still tally.
+const COD_STATUSES = [
+  'pending',
+  'confirmed',
+  'cancel_requested',
+  'cancelled',
+  'no_reply',
+  'no_reply_cancelled',
+] as const
 
 /**
  * GET /api/shopify/cod-config
@@ -185,8 +198,14 @@ export async function PUT(request: Request) {
     const nameFields: (
       | 'cod_template_name'
       | 'cod_thankyou_template_name'
+      | 'cod_cancel_template_name'
       | 'cod_noreply_template_name'
-    )[] = ['cod_template_name', 'cod_thankyou_template_name', 'cod_noreply_template_name']
+    )[] = [
+      'cod_template_name',
+      'cod_thankyou_template_name',
+      'cod_cancel_template_name',
+      'cod_noreply_template_name',
+    ]
     for (const nf of nameFields) {
       const name = update[nf]
       if (typeof name === 'string' && name.length > 0) {
