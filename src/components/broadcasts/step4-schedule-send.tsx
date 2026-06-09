@@ -93,7 +93,7 @@ export function Step4ScheduleSend({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Review & Send</h2>
+        <h2 className="font-heading text-lg font-semibold text-foreground">Review & Send</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Name your campaign, review the details, and send.
         </p>
