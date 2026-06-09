@@ -777,9 +777,15 @@ async function sendReminder(db: any, config: any, conf: any): Promise<void> {
 }
 
 /**
- * Sweep pending confirmations: send reminder 2 at 24h, reminder 3 at 48h, and
- * tag "COD No Reply" at 72h (no auto-cancel). At most one action per row per
- * run; the messages_sent counter makes it safe to run as often as you like.
+ * Sweep pending confirmations (the Vercel cron path). Idempotent — at most one
+ * action per row per run, guarded by messages_sent (reminder) and the status
+ * transition (no-reply). A row that the customer answered is no longer
+ * 'pending', so it's never selected here → it can never get the no-reply cancel.
+ *   - age ≥ cod_reminder1_hours (24h), reminder not yet sent → send reminder
+ *     (reuses the confirmation template), stamp reminder1_sent_at. Once.
+ *   - age ≥ cod_noreply_hours (72h) → send the no-reply template, flip the
+ *     pending tag → no-reply tag, set status = 'no_reply_cancelled'.
+ * Safe to run on a once-daily Hobby cron (actions fire at the next sweep).
  */
 export async function runCodTimers(db: any): Promise<{
   processed: number
@@ -820,6 +826,8 @@ export async function runCodTimers(db: any): Promise<{
       if (ageHours >= config.cod_noreply_hours) {
         try {
           const token = await getValidToken(config as ShopifyConfigRow)
+          // Flip the pending tag → the no-reply (cancelled) tag.
+          await removeOrderTags(config.store_domain, token, conf.shopify_order_id, [config.cod_tag_pending])
           await addOrderTags(config.store_domain, token, conf.shopify_order_id, [config.cod_tag_noreply])
         } catch (err) {
           console.error('[cod] no-reply tagging failed:', err)
@@ -861,11 +869,12 @@ export async function runCodTimers(db: any): Promise<{
 
         await db
           .from('cod_confirmations')
-          .update({ status: 'no_reply', no_reply_at: new Date().toISOString() })
+          .update({ status: 'no_reply_cancelled', no_reply_at: new Date().toISOString() })
           .eq('id', conf.id)
         if (conf.order_id) {
-          await db.from('shopify_orders').update({ cod_status: 'no_reply' }).eq('id', conf.order_id)
+          await db.from('shopify_orders').update({ cod_status: 'no_reply_cancelled' }).eq('id', conf.order_id)
         }
+        console.log('[cod] no-reply cancelled', conf.shopify_order_id)
         noReplies++
       } else if (
         remindersOn &&
