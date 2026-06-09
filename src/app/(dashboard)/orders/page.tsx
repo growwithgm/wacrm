@@ -84,7 +84,9 @@ const COD_LABELS: Record<string, string> = {
   pending: 'Pending',
   confirmed: 'Confirmed',
   cancel_requested: 'Cancel req.',
+  cancelled: 'Cancelled',
   no_reply: 'No reply',
+  no_reply_cancelled: 'Cancelled (no reply)',
 };
 
 function CodBadge({ status }: { status: string | null }) {
@@ -94,7 +96,7 @@ function CodBadge({ status }: { status: string | null }) {
       ? 'bg-primary/10 text-primary'
       : status === 'pending'
         ? 'bg-warning/10 text-warning'
-        : status === 'cancel_requested'
+        : status === 'cancel_requested' || status === 'cancelled' || status === 'no_reply_cancelled'
           ? 'bg-destructive/10 text-destructive'
           : 'bg-muted text-muted-foreground';
   return (
