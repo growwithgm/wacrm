@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -130,7 +130,9 @@ export function Step3Personalize({
   }, [placeholders, variables]);
 
   function updateVariable(key: string, patch: Partial<VariableMapping>) {
-    const current = variables[key] ?? { type: 'static' as VariableType, value: '' };
+    // Default to a dynamic Contact Field (matches the render default below) so a
+    // field picked before the type is touched is never mis-stored as 'static'.
+    const current = variables[key] ?? { type: 'field' as VariableType, value: '' };
     onUpdate({
       ...variables,
       [key]: { ...current, ...patch },
@@ -186,10 +188,10 @@ export function Step3Personalize({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Personalize Message</h2>
+        <h2 className="font-heading text-lg font-semibold text-foreground">Personalize Message</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Map template variables to contact fields, custom fields, or static
-          values.
+          Map each template variable to a contact field (filled per recipient), a
+          custom field, or a static value (same for everyone).
         </p>
       </div>
 
@@ -203,17 +205,26 @@ export function Step3Personalize({
         <div className="space-y-4">
           {placeholders.map((placeholder) => {
             const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-            const mapping = variables[key] ?? { type: 'static', value: '' };
+            const mapping = variables[key] ?? { type: 'field' as VariableType, value: '' };
+            const fieldUnmapped = !mapping.value?.trim();
 
             return (
               <div
                 key={placeholder}
-                className="rounded-xl border border-border bg-card/50 p-4"
+                className={`rounded-xl border bg-card/50 p-4 ${
+                  fieldUnmapped ? 'border-amber-500/40' : 'border-border'
+                }`}
               >
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex items-center justify-between gap-2">
                   <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
                     {placeholder}
                   </span>
+                  {fieldUnmapped && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500">
+                      <AlertTriangle className="h-3 w-3" />
+                      Not mapped
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

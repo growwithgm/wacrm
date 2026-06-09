@@ -249,7 +249,7 @@ export function Step2SelectAudience({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Select Audience</h2>
+        <h2 className="font-heading text-lg font-semibold text-foreground">Select Audience</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Choose who will receive this campaign.
         </p>
