@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -210,7 +210,7 @@ export function ConversationList({
           </button>
         </div>
 
-        <div className="flex h-10 items-center gap-2.5 rounded-xl border border-border bg-background px-3.5 text-muted-foreground">
+        <div className="flex h-10 items-center gap-2.5 rounded-xl border border-border bg-background px-3.5 text-muted-foreground transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
           <Search className="h-[17px] w-[17px] shrink-0" />
           <input
             value={search}
@@ -261,8 +261,20 @@ export function ConversationList({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <p className="text-sm text-muted-foreground">No conversations found</p>
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 ring-8 ring-primary/5">
+              <MessageSquare className="h-5 w-5 text-primary" />
+            </div>
+            <p className="mt-3 font-heading text-sm font-bold text-foreground">
+              {search.trim() || filter !== "all"
+                ? "No conversations match"
+                : "No conversations yet"}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {search.trim() || filter !== "all"
+                ? "Try a different search or filter."
+                : "Incoming WhatsApp messages will appear here."}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col">
@@ -316,7 +328,7 @@ function ConversationItem({
     <button
       onClick={handleClick}
       className={cn(
-        "flex w-full items-start gap-3 border-b border-border-soft px-4 py-3 text-left transition-colors",
+        "flex w-full items-start gap-3 border-b border-border-soft px-4 py-3 text-left transition-colors duration-150 focus-visible:bg-muted focus-visible:outline-none",
         isActive
           ? "border-l-[3px] border-l-primary bg-primary-soft"
           : "border-l-[3px] border-l-transparent hover:bg-background",
