@@ -241,25 +241,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
     for (const change of entry.changes) {
       const value = change.value
 
-      // Handle status updates
-      if (value.statuses) {
-        for (const status of value.statuses) {
-          await handleStatusUpdate(status)
-        }
-      }
-
-      // Handle incoming messages
-      if (!value.messages) continue
-
-      // `contacts` is present for normal inbound messages but Meta may omit
-      // it for forwarded messages or edge-case payloads. Fall back to an empty
-      // array so individual messages still get processed using the sender's
-      // phone number as their display name.
-      const inboundContacts = value.contacts ?? []
-
+      // Resolve the tenant FIRST — statuses and messages alike belong
+      // to the config whose phone_number_id matches this change. Events
+      // for unknown numbers are dropped, never applied cross-tenant.
       const phoneNumberId = value.metadata.phone_number_id
 
-      // Find user's config by phone_number_id
       const { data: config, error: configError } = await supabaseAdmin()
         .from('whatsapp_config')
         .select('*')
@@ -274,6 +260,22 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         console.warn('[webhook] No whatsapp_config row found for phone_number_id:', phoneNumberId, '— is the config saved in Settings?')
         continue
       }
+
+      // Handle status updates
+      if (value.statuses) {
+        for (const status of value.statuses) {
+          await handleStatusUpdate(status, config.user_id)
+        }
+      }
+
+      // Handle incoming messages
+      if (!value.messages) continue
+
+      // `contacts` is present for normal inbound messages but Meta may omit
+      // it for forwarded messages or edge-case payloads. Fall back to an empty
+      // array so individual messages still get processed using the sender's
+      // phone number as their display name.
+      const inboundContacts = value.contacts ?? []
 
       let decryptedAccessToken: string
       try {
@@ -349,16 +351,29 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
-}) {
+}, userId: string) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status.
-  const { error: msgErr } = await supabaseAdmin()
+  //    Scoped through conversations.user_id so a wamid can never touch
+  //    another tenant's message row. PostgREST can't filter an UPDATE
+  //    through a join, so resolve the ids first.
+  const { data: msgRows, error: msgFetchErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .select('id, conversations!inner(user_id)')
     .eq('message_id', status.id)
+    .eq('conversations.user_id', userId)
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (msgFetchErr) {
+    console.error('Error fetching messages for status update:', msgFetchErr)
+  } else if (msgRows && msgRows.length > 0) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .in('id', msgRows.map((m: { id: string }) => m.id))
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
@@ -369,8 +384,9 @@ async function handleStatusUpdate(status: {
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcasts!inner(user_id)')
     .eq('whatsapp_message_id', status.id)
+    .eq('broadcasts.user_id', userId)
     .maybeSingle()
 
   if (recFetchErr) {
