@@ -22,10 +22,21 @@ interface ConversationListProps {
   resyncToken?: number;
 }
 
-// Quick-filter values. "unread" is a derived filter (unread_count > 0);
-// the rest map straight to conversation.status so no existing filter
-// capability is lost.
+// Quick-filter values. "unread" is derived (unread_count > 0), and
+// "open"/"closed" are derived from the WhatsApp 24h customer service
+// window (see isWindowOpen). Only "pending" still maps straight to
+// conversation.status.
 type Filter = "all" | "unread" | ConversationStatus;
+
+// WhatsApp's 24-hour customer service window, anchored to the customer's
+// last INBOUND message (conversations.last_inbound_at). Outbound
+// agent/bot messages never extend it. No inbound ever → window closed.
+const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isWindowOpen(conv: Conversation, now: number): boolean {
+  if (!conv.last_inbound_at) return false;
+  return now - new Date(conv.last_inbound_at).getTime() <= SERVICE_WINDOW_MS;
+}
 
 const FILTER_OPTIONS: { label: string; value: Filter }[] = [
   { label: "All", value: "all" },
@@ -65,6 +76,15 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [loading, setLoading] = useState(true);
+
+  // Ticks every minute so conversations drift from Open to Closed as
+  // their 24h window lapses, without waiting for a refetch or realtime
+  // event (time passing produces no DB event).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -123,11 +143,11 @@ export function ConversationList({
     () => ({
       all: conversations.length,
       unread: conversations.filter((c) => c.unread_count > 0).length,
-      open: conversations.filter((c) => c.status === "open").length,
+      open: conversations.filter((c) => isWindowOpen(c, now)).length,
       pending: conversations.filter((c) => c.status === "pending").length,
-      closed: conversations.filter((c) => c.status === "closed").length,
+      closed: conversations.filter((c) => !isWindowOpen(c, now)).length,
     }),
-    [conversations],
+    [conversations, now],
   );
 
   const filtered = useMemo(() => {
@@ -135,6 +155,10 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "open") {
+      result = result.filter((c) => isWindowOpen(c, now));
+    } else if (filter === "closed") {
+      result = result.filter((c) => !isWindowOpen(c, now));
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -150,7 +174,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search]);
+  }, [conversations, filter, search, now]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,6 +272,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                now={now}
               />
             ))}
           </div>
@@ -261,12 +286,15 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Parent's minute-tick timestamp — keeps the window dot pure. */
+  now: number;
 }
 
 function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  now,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || "Unknown";
@@ -310,7 +338,7 @@ function ConversationItem({
             initials
           )}
         </div>
-        {conversation.status === "open" && (
+        {isWindowOpen(conversation, now) && (
           <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-primary-hover ring-2 ring-card" />
         )}
       </div>
