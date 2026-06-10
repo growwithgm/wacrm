@@ -647,6 +647,10 @@ async function processMessage(
     .update({
       last_message_text: contentText || `[${message.type}]`,
       last_message_at: new Date().toISOString(),
+      // Only customer messages land here (outbound goes via the send
+      // API / flows), so this is the 24h-window anchor the inbox
+      // Open/Closed tabs filter on.
+      last_inbound_at: new Date().toISOString(),
       unread_count: (conversation.unread_count || 0) + 1,
       updated_at: new Date().toISOString(),
     })
