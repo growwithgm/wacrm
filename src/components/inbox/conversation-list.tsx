@@ -7,6 +7,7 @@ import type { Conversation, ConversationStatus } from "@/types";
 import { Search, Plus, MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { NewChatFlow } from "./new-chat-dialog";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -76,6 +77,7 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [loading, setLoading] = useState(true);
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   // Ticks every minute so conversations drift from Open to Closed as
   // their 24h window lapses, without waiting for a refetch or realtime
@@ -203,6 +205,7 @@ export function ConversationList({
           </h2>
           <button
             type="button"
+            onClick={() => setNewChatOpen(true)}
             className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-primary px-3 font-heading text-[13px] font-bold text-primary-foreground shadow-[0_8px_20px_rgba(22,163,74,0.22)] transition hover:bg-primary-hover"
           >
             <Plus className="h-4 w-4" />
@@ -290,6 +293,16 @@ export function ConversationList({
           </div>
         )}
       </ScrollArea>
+
+      {/* New chat flow: recipient picker → TemplatePicker → send via the
+          existing /api/whatsapp/send path. On success the resulting
+          conversation is opened through the same onSelect handler a list
+          click uses; the list row itself arrives via realtime. */}
+      <NewChatFlow
+        open={newChatOpen}
+        onOpenChange={setNewChatOpen}
+        onConversationReady={onSelect}
+      />
     </div>
   );
 }
