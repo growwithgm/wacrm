@@ -88,14 +88,14 @@ export function MessageComposer({
         </div>
       )}
       {sessionExpired && (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
-          <p className="text-xs text-amber-400">
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-warning/25 bg-warning/10 px-3 py-2">
+          <p className="text-xs font-medium text-warning">
             24-hour session expired. Use a template to re-engage.
           </p>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
+            className="h-7 shrink-0 rounded-lg font-heading text-xs font-bold text-warning hover:bg-warning/15 hover:text-warning"
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="mr-1 h-3 w-3" />
@@ -104,7 +104,7 @@ export function MessageComposer({
         </div>
       )}
 
-      <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-background p-1.5 transition-colors focus-within:border-primary/50">
+      <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-background p-1.5 shadow-xs transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
         <Button
           variant="ghost"
           size="sm"

@@ -27,18 +27,21 @@ interface MessageBubbleProps {
   onToggleReaction?: (emoji: string) => void;
 }
 
+// Distinct, brand-token status ladder. The ticks sit on the soft-green
+// agent bubble (dark text), so every step is visually unambiguous:
+// gray clock → gray tick → green double-tick → info-blue double-tick.
 function StatusIcon({ status }: { status: Message["status"] }) {
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className="h-3 w-3 text-muted-foreground/70" />;
     case "sent":
       return <Check className="h-3 w-3 text-muted-foreground" />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck className="h-3 w-3 text-primary" />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      return <CheckCheck className="h-3 w-3 text-info" />;
     case "failed":
-      return <XCircle className="h-3 w-3 text-red-400" />;
+      return <XCircle className="h-3 w-3 text-destructive" />;
     default:
       return null;
   }
@@ -262,9 +265,9 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2 shadow-sm",
+          "relative rounded-2xl px-3.5 py-2 shadow-[0_1px_2px_rgba(11,31,22,0.07)]",
           isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
+            ? "rounded-br-md border border-primary/15 bg-primary-soft-2 text-foreground"
             : "rounded-bl-md border border-border bg-card text-foreground",
         )}
       >
@@ -278,12 +281,7 @@ export function MessageBubble({
             isAgent ? "justify-end" : "justify-start",
           )}
         >
-          <span
-            className={cn(
-              "text-[10px]",
-              isAgent ? "text-primary-foreground/75" : "text-muted-foreground",
-            )}
-          >
+          <span className="text-[10px] tabular-nums text-muted-foreground">
             {time}
           </span>
           {isAgent && <StatusIcon status={message.status} />}

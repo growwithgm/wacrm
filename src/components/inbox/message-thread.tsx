@@ -115,7 +115,7 @@ function groupMessagesByDate(messages: Message[]) {
 
 const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
   { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
+  { label: "Pending", value: "pending", color: "text-warning" },
   { label: "Closed", value: "closed", color: "text-muted-foreground" },
 ];
 
@@ -676,15 +676,15 @@ export function MessageThread({
   // pattern under the user's eye.
   if (!conversation || !contact) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <MessageSquare className="h-8 w-8 text-muted-foreground" />
+      <div className={cn("flex flex-1 flex-col items-center justify-center px-6 text-center", DOODLE_BG_CLASSES)}>
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 ring-8 ring-primary/5">
+          <MessageSquare className="h-7 w-7 text-primary" />
         </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
+        <h3 className="mt-5 font-heading text-base font-extrabold text-foreground">
           Select a conversation
         </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Choose a conversation from the left to start messaging
+        <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+          Choose a conversation from the list to start messaging
         </p>
       </div>
     );
@@ -734,8 +734,10 @@ export function MessageThread({
           <Badge
             variant="outline"
             className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
+              "ml-1 hidden gap-1 rounded-full px-2.5 font-heading text-[10px] font-bold sm:inline-flex sm:ml-2",
+              sessionInfo.expired
+                ? "border-destructive/25 bg-destructive/10 text-destructive"
+                : "border-primary/25 bg-primary/10 text-primary"
             )}
           >
             <Clock className="h-3 w-3" />
@@ -849,15 +851,20 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">No messages yet</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-sm ring-1 ring-border">
+              <MessageSquare className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="mt-3 font-heading text-sm font-bold text-foreground">
+              No messages yet
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Send a template to start the conversation
             </p>
           </div>
@@ -867,7 +874,7 @@ export function MessageThread({
               <div key={group.date}>
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full border border-border-soft bg-card px-3 py-1 text-[10px] font-semibold text-muted-foreground shadow-sm">
+                  <span className="rounded-full border border-border-soft bg-card/90 px-3 py-1 font-heading text-[10px] font-bold uppercase tracking-wide text-muted-foreground shadow-sm backdrop-blur-sm">
                     {formatDateSeparator(group.date)}
                   </span>
                 </div>
