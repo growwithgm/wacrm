@@ -100,6 +100,8 @@ export interface RestCheckout {
   total_price?: string | null
   currency?: string | null
   presentment_currency?: string | null
+  /** Shopify's checkout language (e.g. "es", "en-US") — drives recovery template selection. */
+  customer_locale?: string | null
 }
 
 // ─── Row shapes (mirror migration 016) ─────────────────────────────────────────
@@ -150,6 +152,7 @@ export interface CheckoutRow {
   abandoned_at: string | null
   completed_at: string | null
   recovered: boolean
+  customer_locale: string | null
   raw: unknown
 }
 
@@ -346,6 +349,7 @@ export function mapCheckout(
     abandoned_at: checkout.created_at ?? null,
     completed_at: checkout.completed_at ?? null,
     recovered: !!checkout.completed_at,
+    customer_locale: checkout.customer_locale ?? null,
     raw: checkout,
   }
 }

@@ -212,8 +212,10 @@ async function sendCodText(
   return result.messageId
 }
 
-/** Find-or-create the contact + conversation for a phone (outbound first-touch). */
-async function ensureContactConversation(
+/** Find-or-create the contact + conversation for a phone (outbound first-touch).
+ *  Exported for reuse by the checkout-recovery engine — same dedupe semantics
+ *  as the inbound webhook (phonesMatch + user_id/contact_id keys). */
+export async function ensureContactConversation(
   db: any,
   userId: string,
   phone: string,

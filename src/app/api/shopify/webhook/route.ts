@@ -8,6 +8,7 @@ import {
   cleanupStoreData,
 } from '@/lib/shopify/store'
 import { isCodPendingOrder, startCodConfirmation } from '@/lib/cod/engine'
+import { ensureCheckoutRecovery } from '@/lib/recovery/engine'
 import type { RestOrder, RestCheckout, RestFulfillment } from '@/lib/shopify/transform'
 
 // Node runtime — needs `crypto` for HMAC verification.
@@ -161,9 +162,15 @@ export async function POST(request: Request) {
       }
 
       case 'checkouts/create':
-      case 'checkouts/update':
-        await upsertCheckout(db(), userId, storeDomain, payload as RestCheckout, 'webhook')
+      case 'checkouts/update': {
+        const checkoutPayload = payload as RestCheckout
+        await upsertCheckout(db(), userId, storeDomain, checkoutPayload, 'webhook')
+        // Abandoned-checkout recovery bookkeeping. Like COD, only the live
+        // webhook path can start a sequence — backfill sync never does.
+        // Idempotent (one row per checkout) and best-effort internally.
+        await ensureCheckoutRecovery(db(), userId, checkoutPayload)
         break
+      }
 
       case 'fulfillments/create':
       case 'fulfillments/update':
