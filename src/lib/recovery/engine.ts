@@ -43,6 +43,54 @@ const DEFAULT_DELAY2_MIN = 24 * 60
 const DEFAULT_DELAY3_MIN = 48 * 60
 const DEFAULT_COOLDOWN_DAYS = 7
 
+// Opt-out keywords used when shopify_config.recovery_stop_keywords is
+// absent/empty (pre-migration or never configured). The merchant edits
+// the real list in the Recovery settings UI.
+const DEFAULT_STOP_KEYWORDS = ['stop', 'baja', 'parar', 'unsubscribe']
+
+/** Lowercase, strip accents, collapse whitespace — for keyword matching. */
+function normalizeForMatch(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * True when the inbound text contains any opt-out keyword. Single-word
+ * keywords match on a whole-word boundary ("stop", "STOP please" → yes;
+ * "stopwatch" → no); multi-word keywords ("no molestar") match as a
+ * normalized substring. Accent- and case-insensitive.
+ */
+export function matchesStopKeyword(
+  text: string | null | undefined,
+  keywords: string[] | null | undefined,
+): boolean {
+  if (!text) return false
+  const list = (keywords && keywords.length > 0 ? keywords : DEFAULT_STOP_KEYWORDS)
+    .map(normalizeForMatch)
+    .filter(Boolean)
+  if (list.length === 0) return false
+  const haystack = normalizeForMatch(text)
+  if (!haystack) return false
+  for (const kw of list) {
+    if (kw.includes(' ')) {
+      if (haystack.includes(kw)) return true
+    } else {
+      // Whole-word match so "baja" doesn't fire on "trabajar".
+      const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(kw)}([^\\p{L}\\p{N}]|$)`, 'u')
+      if (re.test(haystack)) return true
+    }
+  }
+  return false
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** First word of the customer name, with a locale-aware fallback. */
 function firstNameOf(name: string | null | undefined, isSpanish: boolean): string {
   const first = (name ?? '').trim().split(/\s+/)[0]
@@ -498,4 +546,69 @@ export async function runRecoveryTimers(db: any): Promise<{
   }
 
   return { processed: rows?.length ?? 0, sent, stopped }
+}
+
+// ─── Customer STOP / opt-out ────────────────────────────────────────────────
+
+/**
+ * Stop a contact's ACTIVE recovery sequence(s) when they reply with a
+ * configured opt-out keyword.
+ *
+ * Called from the inbound webhook ALONGSIDE handleCodReply — it never
+ * touches COD's SÍ/NO handling. Scope is deliberately narrow:
+ *   - only flips checkout_recoveries rows that are still 'active' to
+ *     'opted_out' (no further reminders for those checkouts);
+ *   - does NOT set any permanent/global block — a future new checkout
+ *     starts a fresh sequence normally;
+ *   - does NOT touch COD, orders, tags, or the conversation.
+ *
+ * Idempotent: an already-stopped sequence is not 'active', so a second
+ * STOP reply updates nothing. Best-effort — failures are logged only.
+ */
+export async function handleRecoveryOptOut(
+  db: any,
+  args: {
+    userId: string
+    contactId: string | null
+    text: string | null
+  },
+): Promise<{ optedOut: number }> {
+  try {
+    const { userId, contactId, text } = args
+    if (!contactId || !text) return { optedOut: 0 }
+
+    // The contact can only reply to a recovery message we already sent,
+    // and that send stamps contact_id on the row — so an active sequence
+    // for this contact is the right and reliable match. Read keywords
+    // from the tenant's config (falls back to defaults when unset).
+    const { data: config } = await db
+      .from('shopify_config')
+      .select('recovery_stop_keywords')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (!matchesStopKeyword(text, config?.recovery_stop_keywords)) {
+      return { optedOut: 0 } // unrelated reply — leave everything as-is
+    }
+
+    // Stop every still-active sequence for this contact. A STOP reply
+    // means "stop messaging me about carts", so we don't single out one
+    // checkout. Only 'active' rows are touched (idempotent).
+    const { data: stopped } = await db
+      .from('checkout_recoveries')
+      .update({ status: 'opted_out', last_error: null })
+      .eq('user_id', userId)
+      .eq('contact_id', contactId)
+      .eq('status', 'active')
+      .select('id')
+
+    const count = stopped?.length ?? 0
+    if (count > 0) {
+      console.log('[recovery] opt-out — stopped active sequences', { contactId, count })
+    }
+    return { optedOut: count }
+  } catch (err) {
+    console.error('[recovery] handleRecoveryOptOut failed:', err)
+    return { optedOut: 0 }
+  }
 }

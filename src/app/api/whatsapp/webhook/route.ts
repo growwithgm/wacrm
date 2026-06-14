@@ -7,6 +7,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { handleCodReply } from '@/lib/cod/engine'
+import { handleRecoveryOptOut } from '@/lib/recovery/engine'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -773,6 +774,21 @@ async function processMessage(
     })
   } catch (err) {
     console.error('[cod] reply dispatch failed:', err)
+  }
+
+  // Abandoned-checkout recovery opt-out. Runs ALONGSIDE the COD reply
+  // handler above — it never inspects or alters COD's SÍ/NO logic. No-op
+  // unless the reply matches a configured stop keyword AND this contact
+  // has an active recovery sequence; in that case the current sequence is
+  // stopped (a future checkout still starts a fresh one).
+  try {
+    await handleRecoveryOptOut(supabaseAdmin(), {
+      userId,
+      contactId: contactRecord.id,
+      text: inboundText,
+    })
+  } catch (err) {
+    console.error('[recovery] opt-out dispatch failed:', err)
   }
 }
 

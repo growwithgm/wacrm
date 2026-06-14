@@ -27,6 +27,7 @@ import {
   Store,
   Tag,
   BadgeCheck,
+  RotateCcw,
 } from "lucide-react";
 import {
   Avatar,
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
   { href: "/contacts",        label: "Contacts",        icon: Users },
   { href: "/orders",          label: "Orders",          icon: ShoppingBag },
   { href: "/abandoned-carts", label: "Abandoned Carts", icon: ShoppingCart },
+  { href: "/recovery",        label: "Cart Recovery",   icon: RotateCcw },
   { href: "/cod",             label: "COD Confirmation", icon: BadgeCheck },
   { href: "/pipelines",       label: "Pipelines",       icon: GitBranch },
   { href: "/automations",     label: "Automations",     icon: Zap },
