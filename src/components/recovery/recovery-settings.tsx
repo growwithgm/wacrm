@@ -41,9 +41,14 @@ interface RecoveryConfig {
   recovery_delay2_minutes: number
   recovery_delay3_minutes: number
   recovery_cooldown_days: number
-  recovery_template_name_es: string | null
+  // One template per reminder (1 / 2 / 3), per language family.
+  recovery_template1_name_es: string | null
+  recovery_template2_name_es: string | null
+  recovery_template3_name_es: string | null
   recovery_template_lang_es: string | null
-  recovery_template_name_en: string | null
+  recovery_template1_name_en: string | null
+  recovery_template2_name_en: string | null
+  recovery_template3_name_en: string | null
   recovery_template_lang_en: string | null
   recovery_stop_keywords: string[]
 }
@@ -69,9 +74,13 @@ const DEFAULTS: RecoveryConfig = {
   recovery_delay2_minutes: 1440,
   recovery_delay3_minutes: 2880,
   recovery_cooldown_days: 7,
-  recovery_template_name_es: null,
+  recovery_template1_name_es: null,
+  recovery_template2_name_es: null,
+  recovery_template3_name_es: null,
   recovery_template_lang_es: 'es',
-  recovery_template_name_en: null,
+  recovery_template1_name_en: null,
+  recovery_template2_name_en: null,
+  recovery_template3_name_en: null,
   recovery_template_lang_en: 'en_US',
   recovery_stop_keywords: ['stop', 'baja', 'parar', 'unsubscribe'],
 }
@@ -119,6 +128,65 @@ function ApprovedTemplateSelect({
         )}
       </SelectContent>
     </Select>
+  )
+}
+
+// ─── One reminder's template pickers (Spanish + English) ──────────────────────
+// Each reminder (1/2/3) gets its own approved template per language family.
+// The shared family language hint is updated when a template is picked.
+
+type EsNameKey =
+  | 'recovery_template1_name_es'
+  | 'recovery_template2_name_es'
+  | 'recovery_template3_name_es'
+type EnNameKey =
+  | 'recovery_template1_name_en'
+  | 'recovery_template2_name_en'
+  | 'recovery_template3_name_en'
+
+function ReminderTemplateRow({
+  stage,
+  label,
+  templates,
+  config,
+  set,
+}: {
+  stage: 1 | 2 | 3
+  label: string
+  templates: ApprovedTpl[]
+  config: RecoveryConfig
+  set: <K extends keyof RecoveryConfig>(key: K, value: RecoveryConfig[K]) => void
+}) {
+  const esKey = `recovery_template${stage}_name_es` as EsNameKey
+  const enKey = `recovery_template${stage}_name_en` as EnNameKey
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+      <p className="font-heading text-sm font-semibold text-foreground">{label}</p>
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">Spanish</Label>
+        <ApprovedTemplateSelect
+          templates={templates}
+          name={config[esKey]}
+          language={config.recovery_template_lang_es}
+          onChange={(name, language) => {
+            set(esKey, name)
+            set('recovery_template_lang_es', language)
+          }}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">English</Label>
+        <ApprovedTemplateSelect
+          templates={templates}
+          name={config[enKey]}
+          language={config.recovery_template_lang_en}
+          onChange={(name, language) => {
+            set(enKey, name)
+            set('recovery_template_lang_en', language)
+          }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -268,9 +336,13 @@ export function RecoverySettings() {
           recovery_delay2_minutes: c.recovery_delay2_minutes ?? DEFAULTS.recovery_delay2_minutes,
           recovery_delay3_minutes: c.recovery_delay3_minutes ?? DEFAULTS.recovery_delay3_minutes,
           recovery_cooldown_days: c.recovery_cooldown_days ?? DEFAULTS.recovery_cooldown_days,
-          recovery_template_name_es: c.recovery_template_name_es ?? null,
+          recovery_template1_name_es: c.recovery_template1_name_es ?? null,
+          recovery_template2_name_es: c.recovery_template2_name_es ?? null,
+          recovery_template3_name_es: c.recovery_template3_name_es ?? null,
           recovery_template_lang_es: c.recovery_template_lang_es ?? 'es',
-          recovery_template_name_en: c.recovery_template_name_en ?? null,
+          recovery_template1_name_en: c.recovery_template1_name_en ?? null,
+          recovery_template2_name_en: c.recovery_template2_name_en ?? null,
+          recovery_template3_name_en: c.recovery_template3_name_en ?? null,
           recovery_template_lang_en: c.recovery_template_lang_en ?? 'en_US',
           recovery_stop_keywords: Array.isArray(c.recovery_stop_keywords)
             ? c.recovery_stop_keywords
@@ -303,8 +375,15 @@ export function RecoverySettings() {
   }
 
   async function handleSave() {
-    if (config.recovery_enabled && !config.recovery_template_name_es && !config.recovery_template_name_en) {
-      toast.error('Pick at least one recovery template before enabling recovery.')
+    const anyTemplate =
+      config.recovery_template1_name_es ||
+      config.recovery_template2_name_es ||
+      config.recovery_template3_name_es ||
+      config.recovery_template1_name_en ||
+      config.recovery_template2_name_en ||
+      config.recovery_template3_name_en
+    if (config.recovery_enabled && !anyTemplate) {
+      toast.error('Pick at least one reminder template before enabling recovery.')
       return
     }
     setSaving(true)
@@ -447,39 +526,34 @@ export function RecoverySettings() {
                 Recovery templates
               </CardTitle>
               <CardDescription>
-                The approved template sent at each reminder. The language is chosen automatically from
-                the checkout&rsquo;s locale ({'{{1}}'} = customer first name, {'{{2}}'} = cart total, plus
-                a dynamic recovery-link button).
+                Pick a separate approved template for each reminder. The language is chosen
+                automatically from the checkout&rsquo;s locale ({'{{1}}'} = customer first name,
+                {' '}{'{{2}}'} = cart total, plus a dynamic recovery-link button). English slots are
+                optional until you connect an English store.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label>Spanish template</Label>
-                <ApprovedTemplateSelect
-                  templates={templates}
-                  name={config.recovery_template_name_es}
-                  language={config.recovery_template_lang_es}
-                  onChange={(name, language) => {
-                    set('recovery_template_name_es', name)
-                    set('recovery_template_lang_es', language)
-                  }}
-                />
-              </div>
-              <div className="space-y-2 border-t border-border pt-4">
-                <Label>English template</Label>
-                <ApprovedTemplateSelect
-                  templates={templates}
-                  name={config.recovery_template_name_en}
-                  language={config.recovery_template_lang_en}
-                  onChange={(name, language) => {
-                    set('recovery_template_name_en', name)
-                    set('recovery_template_lang_en', language)
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used for non-Spanish checkouts. Optional until you connect an English store.
-                </p>
-              </div>
+            <CardContent className="space-y-4">
+              <ReminderTemplateRow
+                stage={1}
+                label="Reminder 1"
+                templates={templates}
+                config={config}
+                set={set}
+              />
+              <ReminderTemplateRow
+                stage={2}
+                label="Reminder 2"
+                templates={templates}
+                config={config}
+                set={set}
+              />
+              <ReminderTemplateRow
+                stage={3}
+                label="Reminder 3"
+                templates={templates}
+                config={config}
+                set={set}
+              />
             </CardContent>
           </Card>
 

@@ -449,29 +449,38 @@ export async function runRecoveryTimers(db: any): Promise<{
       else if (ageMinutes >= d1 && rec.reminders_sent < 1) stage = 1
       if (stage === null) continue
 
-      // Template selection by checkout language — never hardcoded.
+      // Per-reminder template selection by checkout language — never
+      // hardcoded. Each stage (1/2/3) has its own configured template;
+      // the shared family language hint is reused (the exact approved
+      // language is resolved by name in sendRecoveryTemplate).
       const spanish = isSpanishLocale(checkout.customer_locale)
-      let templateName: string | null = spanish
-        ? config.recovery_template_name_es
-        : config.recovery_template_name_en
+      const esName: string | null = config[`recovery_template${stage}_name_es`] ?? null
+      const enName: string | null = config[`recovery_template${stage}_name_en`] ?? null
+      let templateName: string | null = spanish ? esName : enName
       let templateLang: string = spanish
         ? config.recovery_template_lang_es || 'es'
         : config.recovery_template_lang_en || 'en_US'
-      // Fall back to whichever single template IS configured rather than
-      // silently stalling (e.g. only Spanish exists today).
+      // Cross-language fallback for THIS reminder only — e.g. an
+      // all-Spanish setup still covers a non-Spanish checkout.
       if (!templateName) {
-        templateName = spanish
-          ? config.recovery_template_name_en
-          : config.recovery_template_name_es
+        templateName = spanish ? enName : esName
         templateLang = spanish
           ? config.recovery_template_lang_en || 'en_US'
           : config.recovery_template_lang_es || 'es'
       }
+      // This specific reminder has no template configured in either
+      // language → skip it gracefully: advance the stage (so later
+      // reminders still fire) without sending, and note why.
       if (!templateName) {
         await db
           .from('checkout_recoveries')
-          .update({ last_error: 'no recovery template configured' })
+          .update({
+            reminders_sent: stage,
+            last_error: `reminder ${stage}: no template configured`,
+            ...(stage === 3 ? { status: 'done' } : {}),
+          })
           .eq('id', rec.id)
+        console.log(`[recovery] reminder ${stage} skipped — no template`, rec.shopify_checkout_id)
         continue
       }
 
