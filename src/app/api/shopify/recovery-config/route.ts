@@ -25,9 +25,16 @@ const RECOVERY_FIELDS = [
   'recovery_delay2_minutes',
   'recovery_delay3_minutes',
   'recovery_cooldown_days',
-  'recovery_template_name_es',
+  // Per-reminder template names (migration 028). The old single
+  // recovery_template_name_es/_en columns are deprecated and no longer
+  // read/written here.
+  'recovery_template1_name_es',
+  'recovery_template2_name_es',
+  'recovery_template3_name_es',
+  'recovery_template1_name_en',
+  'recovery_template2_name_en',
+  'recovery_template3_name_en',
   'recovery_template_lang_es',
-  'recovery_template_name_en',
   'recovery_template_lang_en',
   'recovery_stop_keywords',
 ] as const
@@ -163,10 +170,14 @@ export async function PUT(request: Request) {
     }
 
     // Validate any template names against the user's Approved templates.
-    const nameFields: ('recovery_template_name_es' | 'recovery_template_name_en')[] = [
-      'recovery_template_name_es',
-      'recovery_template_name_en',
-    ]
+    const nameFields = [
+      'recovery_template1_name_es',
+      'recovery_template2_name_es',
+      'recovery_template3_name_es',
+      'recovery_template1_name_en',
+      'recovery_template2_name_en',
+      'recovery_template3_name_en',
+    ] as const
     for (const nf of nameFields) {
       const name = update[nf]
       if (typeof name === 'string' && name.length > 0) {
