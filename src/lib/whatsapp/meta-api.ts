@@ -297,6 +297,12 @@ export interface SendTemplateMessageArgs {
   params?: string[]
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
+  /**
+   * Value for a dynamic URL button at index 0 (template defined with a
+   * button URL like "https://store.com/{{1}}"). Meta substitutes this
+   * string for the {{1}} suffix. Omit for templates without URL buttons.
+   */
+  urlButtonParam?: string
 }
 
 /**
@@ -314,6 +320,7 @@ export async function sendTemplateMessage(
     language = 'en_US',
     params,
     contextMessageId,
+    urlButtonParam,
   } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
@@ -322,13 +329,23 @@ export async function sendTemplateMessage(
     language: { code: language },
   }
 
+  const components: Record<string, unknown>[] = []
   if (params && params.length > 0) {
-    template.components = [
-      {
-        type: 'body',
-        parameters: params.map((p) => ({ type: 'text', text: String(p) })),
-      },
-    ]
+    components.push({
+      type: 'body',
+      parameters: params.map((p) => ({ type: 'text', text: String(p) })),
+    })
+  }
+  if (urlButtonParam) {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: urlButtonParam }],
+    })
+  }
+  if (components.length > 0) {
+    template.components = components
   }
 
   const body: Record<string, unknown> = {

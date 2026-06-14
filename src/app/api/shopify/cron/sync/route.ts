@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidToken, shopifyRest } from '@/lib/shopify/client'
 import { upsertOrder, upsertCheckout } from '@/lib/shopify/store'
 import { runCodTimers } from '@/lib/cod/engine'
+import { runRecoveryTimers } from '@/lib/recovery/engine'
 import type { ShopifyConfigRow } from '@/lib/shopify/client'
 import type { RestOrder, RestCheckout } from '@/lib/shopify/transform'
 
@@ -144,5 +145,14 @@ export async function GET(request: Request) {
     console.error('[shopify/cron] COD timers failed:', err)
   }
 
-  return NextResponse.json({ ok: true, stores, orders, checkouts, cod, failures })
+  // Abandoned-checkout recovery sweep — same scheduler as COD, same
+  // idempotency guards (reminders_sent gates + order-complete check).
+  let recovery = { processed: 0, sent: 0, stopped: 0 }
+  try {
+    recovery = await runRecoveryTimers(admin)
+  } catch (err) {
+    console.error('[shopify/cron] recovery timers failed:', err)
+  }
+
+  return NextResponse.json({ ok: true, stores, orders, checkouts, cod, recovery, failures })
 }

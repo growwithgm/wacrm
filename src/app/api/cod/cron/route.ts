@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { runCodTimers } from '@/lib/cod/engine'
+import { runRecoveryTimers } from '@/lib/recovery/engine'
 
 export const runtime = 'nodejs'
 
@@ -47,7 +48,15 @@ export async function GET(request: Request) {
 
   try {
     const cod = await runCodTimers(admin)
-    return NextResponse.json({ ok: true, cod })
+    // Abandoned-checkout recovery shares this sweep — same scheduler,
+    // same manual trigger for testing. Idempotent like the COD timers.
+    let recovery = { processed: 0, sent: 0, stopped: 0 }
+    try {
+      recovery = await runRecoveryTimers(admin)
+    } catch (err) {
+      console.error('[cod/cron] recovery timers failed:', err)
+    }
+    return NextResponse.json({ ok: true, cod, recovery })
   } catch (err) {
     console.error('[cod/cron] failed:', err)
     return NextResponse.json(
