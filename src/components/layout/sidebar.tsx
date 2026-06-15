@@ -28,6 +28,7 @@ import {
   Tag,
   BadgeCheck,
   RotateCcw,
+  Percent,
 } from "lucide-react";
 import {
   Avatar,
@@ -61,6 +62,7 @@ const navItems: NavItem[] = [
   { href: "/abandoned-carts", label: "Abandoned Carts", icon: ShoppingCart },
   { href: "/recovery",        label: "Cart Recovery",   icon: RotateCcw },
   { href: "/cod",             label: "COD Confirmation", icon: BadgeCheck },
+  { href: "/discounts",       label: "Discounts",       icon: Percent },
   { href: "/pipelines",       label: "Pipelines",       icon: GitBranch },
   { href: "/automations",     label: "Automations",     icon: Zap },
   { href: "/flows",           label: "Flows",           icon: Workflow, beta: true },

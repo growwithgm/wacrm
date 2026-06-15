@@ -4,10 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { isValidShopDomain } from '@/lib/shopify/hmac'
 
 // Reads customers/orders/checkouts/fulfillments; write_orders is needed to
-// add/remove COD tags on orders.
+// add/remove COD tags on orders; read_discounts/write_discounts are needed to
+// generate per-customer single-use discount codes.
 // NOTE: widening scopes requires already-connected merchants to RECONNECT
 // before the new permission takes effect (existing tokens keep old scopes).
-const SCOPES = 'read_customers,read_orders,read_checkouts,read_fulfillments,write_orders'
+const SCOPES =
+  'read_customers,read_orders,read_checkouts,read_fulfillments,write_orders,read_discounts,write_discounts'
 
 /**
  * GET /api/shopify/connect?shop=mystore.myshopify.com
