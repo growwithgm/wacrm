@@ -36,9 +36,11 @@ import { countPlaceholders } from '@/lib/cod/fields'
 import {
   buildRecoveryParams,
   recoveryButtonSource,
+  varMapUsesDiscount,
   type RecoveryFields,
 } from '@/lib/recovery/fields'
 import { ensureContactConversation } from '@/lib/cod/engine'
+import { generateDiscountCodeForContact } from '@/lib/shopify/discounts'
 
 // Fallback delays (minutes) when the config columns are absent
 // (pre-migration). The real values live on shopify_config and are
@@ -517,6 +519,37 @@ export async function runRecoveryTimers(db: any): Promise<{
         | Record<string, string>
         | null
 
+      // Resolve the contact/conversation first — we need the contact id to
+      // mint a per-customer discount code below.
+      const { contactId, conversationId } = await ensureContactConversation(
+        db,
+        rec.user_id,
+        phone,
+        checkout.customer_name ?? null,
+      )
+
+      // Optional discount code. Generated ONLY when this reminder's mapping
+      // uses one and a discount is selected. Best-effort: any failure (no
+      // scope, Shopify error, disabled discount) leaves the code empty and
+      // the reminder still sends — never blocked by a discount problem.
+      const discountId = config[`recovery_template${stage}_discount_id`] ?? null
+      if (varMapUsesDiscount(varMap) && discountId) {
+        try {
+          const gen = await generateDiscountCodeForContact(
+            db,
+            rec.user_id,
+            discountId,
+            contactId,
+          )
+          fields.discount_code = gen.code
+        } catch (err) {
+          console.error(
+            `[recovery] reminder ${stage} discount generation failed — sending without a code:`,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
+
       const { data: tpl } = await db
         .from('message_templates')
         .select('body_text')
@@ -532,19 +565,17 @@ export async function runRecoveryTimers(db: any): Promise<{
         (_: string, raw: string) => params[Number(raw) - 1] ?? `{{${raw}}}`,
       )
 
-      // Button URL source — 'recovery_url' (the only source today) → Shopify's
-      // abandoned checkout URL. Mapping-driven so more sources can be added.
-      const suffix =
-        recoveryButtonSource(varMap) === 'recovery_url'
-          ? urlButtonSuffix(checkout.abandoned_checkout_url)
-          : null
-
-      const { contactId, conversationId } = await ensureContactConversation(
-        db,
-        rec.user_id,
-        phone,
-        checkout.customer_name ?? null,
-      )
+      // Button URL source. 'recovery_url' → Shopify's abandoned checkout URL;
+      // 'recovery_url_with_discount' appends the generated code (if any) so the
+      // link pre-applies the discount. Mapping-driven.
+      const buttonSource = recoveryButtonSource(varMap)
+      let suffix: string | null = null
+      if (buttonSource === 'recovery_url' || buttonSource === 'recovery_url_with_discount') {
+        suffix = urlButtonSuffix(checkout.abandoned_checkout_url)
+        if (buttonSource === 'recovery_url_with_discount' && suffix && fields.discount_code) {
+          suffix += (suffix.includes('?') ? '&' : '?') + 'discount=' + encodeURIComponent(fields.discount_code)
+        }
+      }
 
       await sendRecoveryTemplate(
         db,

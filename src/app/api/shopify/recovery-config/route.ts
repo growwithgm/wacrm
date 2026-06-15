@@ -41,6 +41,10 @@ const RECOVERY_FIELDS = [
   'recovery_template1_var_map',
   'recovery_template2_var_map',
   'recovery_template3_var_map',
+  // Per-reminder discount (migration 031).
+  'recovery_template1_discount_id',
+  'recovery_template2_discount_id',
+  'recovery_template3_discount_id',
   'recovery_stop_keywords',
 ] as const
 
@@ -176,6 +180,23 @@ export async function PUT(request: Request) {
             }
           }
           update[f] = v
+        }
+      } else if (f.endsWith('_discount_id')) {
+        // null clears; otherwise it must reference one of the user's discounts.
+        if (v == null || v === '') {
+          update[f] = null
+        } else {
+          const id = String(v)
+          const { data: disc } = await supabase
+            .from('discounts')
+            .select('id')
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .maybeSingle()
+          if (!disc) {
+            return NextResponse.json({ error: `${f}: discount not found` }, { status: 400 })
+          }
+          update[f] = id
         }
       } else if (f === 'recovery_stop_keywords') {
         if (v == null) {

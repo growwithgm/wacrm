@@ -14,11 +14,15 @@ export const RECOVERY_FIELD_OPTIONS = [
   { key: 'cart_total', label: 'Cart total' },
   { key: 'currency', label: 'Currency' },
   { key: 'items_count', label: 'Items count' },
+  // Generates a unique single-use code from the reminder's selected discount
+  // at send time and injects it here.
+  { key: 'discount_code', label: 'Discount code' },
 ] as const
 
 /** Sources for the dynamic URL button. */
 export const RECOVERY_URL_OPTIONS = [
   { key: 'recovery_url', label: 'Recovery link (abandoned checkout URL)' },
+  { key: 'recovery_url_with_discount', label: 'Recovery link + discount code' },
 ] as const
 
 export type RecoveryFieldKey = (typeof RECOVERY_FIELD_OPTIONS)[number]['key']
@@ -45,6 +49,8 @@ export interface RecoveryFields {
   cart_total?: string | null
   currency?: string | null
   items_count?: number | null
+  /** Generated single-use discount code (empty when none / generation failed). */
+  discount_code?: string | null
 }
 
 /** Resolve one mapped body-field key to its string value. */
@@ -60,9 +66,28 @@ export function recoveryFieldValue(key: string | undefined, f: RecoveryFields): 
       return f.currency ?? ''
     case 'items_count':
       return f.items_count != null ? String(f.items_count) : ''
+    case 'discount_code':
+      return f.discount_code ?? ''
     default:
       return ''
   }
+}
+
+/**
+ * True when a reminder's mapping references a discount code — either a body
+ * placeholder mapped to `discount_code` or the button using the
+ * with-discount URL source. Lets the engine generate a code only when needed.
+ */
+export function varMapUsesDiscount(varMap: Record<string, string> | null | undefined): boolean {
+  if (!varMap) return false
+  for (const [k, v] of Object.entries(varMap)) {
+    if (k === 'button') {
+      if (v === 'recovery_url_with_discount') return true
+    } else if (v === 'discount_code') {
+      return true
+    }
+  }
+  return false
 }
 
 /**

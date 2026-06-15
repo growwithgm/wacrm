@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRecoveryParams,
   recoveryButtonSource,
+  varMapUsesDiscount,
+  recoveryFieldValue,
   type RecoveryFields,
 } from './fields'
 
@@ -44,5 +46,36 @@ describe('recoveryButtonSource', () => {
 
   it('honors an explicit button source', () => {
     expect(recoveryButtonSource({ button: 'recovery_url' })).toBe('recovery_url')
+    expect(recoveryButtonSource({ button: 'recovery_url_with_discount' })).toBe(
+      'recovery_url_with_discount',
+    )
+  })
+})
+
+describe('varMapUsesDiscount', () => {
+  it('is false for empty / default-only maps', () => {
+    expect(varMapUsesDiscount(null)).toBe(false)
+    expect(varMapUsesDiscount({})).toBe(false)
+    expect(varMapUsesDiscount({ '1': 'first_name', '2': 'cart_total' })).toBe(false)
+  })
+
+  it('is true when a body placeholder maps to discount_code', () => {
+    expect(varMapUsesDiscount({ '1': 'first_name', '2': 'discount_code' })).toBe(true)
+  })
+
+  it('is true when the button uses the with-discount URL', () => {
+    expect(varMapUsesDiscount({ button: 'recovery_url_with_discount' })).toBe(true)
+  })
+
+  it('is false when the button is the plain recovery URL', () => {
+    expect(varMapUsesDiscount({ button: 'recovery_url' })).toBe(false)
+  })
+})
+
+describe('recoveryFieldValue (discount_code)', () => {
+  it('returns the generated code, or empty when absent', () => {
+    const f: RecoveryFields = { discount_code: 'SAVE10-AB12' }
+    expect(recoveryFieldValue('discount_code', f)).toBe('SAVE10-AB12')
+    expect(recoveryFieldValue('discount_code', {})).toBe('')
   })
 })
