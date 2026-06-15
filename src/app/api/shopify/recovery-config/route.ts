@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { RECOVERY_FIELD_KEYS, RECOVERY_URL_KEYS } from '@/lib/recovery/fields'
 
 // Service-role client for writes (mirrors /api/shopify/cod-config). Lazy so a
 // missing env var doesn't crash the build.
@@ -36,6 +37,10 @@ const RECOVERY_FIELDS = [
   'recovery_template3_name_en',
   'recovery_template_lang_es',
   'recovery_template_lang_en',
+  // Per-reminder variable mapping (migration 030).
+  'recovery_template1_var_map',
+  'recovery_template2_var_map',
+  'recovery_template3_var_map',
   'recovery_stop_keywords',
 ] as const
 
@@ -147,6 +152,31 @@ export async function PUT(request: Request) {
           return NextResponse.json({ error: 'recovery_cooldown_days must be 0–365' }, { status: 400 })
         }
         update[f] = n
+      } else if (f.endsWith('_var_map')) {
+        // { "1": <body field key>, "2": ..., "button": <url source key> }
+        if (v == null) {
+          update[f] = {}
+        } else if (typeof v !== 'object' || Array.isArray(v)) {
+          return NextResponse.json({ error: `${f} must be an object` }, { status: 400 })
+        } else {
+          for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+            if (typeof val !== 'string') {
+              return NextResponse.json({ error: `${f}: values must be strings` }, { status: 400 })
+            }
+            if (k === 'button') {
+              if (!RECOVERY_URL_KEYS.includes(val)) {
+                return NextResponse.json({ error: `${f}: "${val}" is not a valid URL source` }, { status: 400 })
+              }
+            } else if (/^\d+$/.test(k)) {
+              if (!RECOVERY_FIELD_KEYS.includes(val)) {
+                return NextResponse.json({ error: `${f}: "${val}" is not a valid field` }, { status: 400 })
+              }
+            } else {
+              return NextResponse.json({ error: `${f}: keys must be placeholder numbers or "button"` }, { status: 400 })
+            }
+          }
+          update[f] = v
+        }
       } else if (f === 'recovery_stop_keywords') {
         if (v == null) {
           update[f] = []

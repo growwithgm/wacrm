@@ -33,6 +33,11 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { resolveTemplate } from '@/lib/whatsapp/templates'
 import { countPlaceholders } from '@/lib/cod/fields'
+import {
+  buildRecoveryParams,
+  recoveryButtonSource,
+  type RecoveryFields,
+} from '@/lib/recovery/fields'
 import { ensureContactConversation } from '@/lib/cod/engine'
 
 // Fallback delays (minutes) when the config columns are absent
@@ -133,6 +138,17 @@ function urlButtonSuffix(abandonedUrl: string | null | undefined): string | null
 
 function isSpanishLocale(locale: string | null | undefined): boolean {
   return (locale ?? '').trim().toLowerCase().startsWith('es')
+}
+
+/** Total item quantity from a checkout's line_items JSONB (null if absent). */
+function itemsCount(lineItems: unknown): number | null {
+  if (!Array.isArray(lineItems)) return null
+  let n = 0
+  for (const li of lineItems) {
+    const q = (li as { quantity?: number })?.quantity
+    if (typeof q === 'number') n += q
+  }
+  return n
 }
 
 // ─── Webhook entry point: create/refresh the tracking row ───────────────────
@@ -484,13 +500,23 @@ export async function runRecoveryTimers(db: any): Promise<{
         continue
       }
 
-      // {{1}} first name, {{2}} cart total with currency. Sliced to the
-      // template's actual placeholder count so Meta never rejects for
-      // extra params.
-      const fullParams = [
-        firstNameOf(checkout.customer_name, spanish),
-        formatTotal(checkout.total_price, checkout.currency, spanish),
-      ]
+      // Fill the placeholders + button from THIS reminder's variable map
+      // (migration 030). An empty/unset map falls back to the built-in
+      // defaults ({{1}} = first name, {{2}} = cart total, button = recovery
+      // URL), so existing setups are unchanged.
+      const fields: RecoveryFields = {
+        first_name: firstNameOf(checkout.customer_name, spanish),
+        full_name:
+          (checkout.customer_name ?? '').trim() ||
+          firstNameOf(checkout.customer_name, spanish),
+        cart_total: formatTotal(checkout.total_price, checkout.currency, spanish),
+        currency: checkout.currency ?? '',
+        items_count: itemsCount(checkout.line_items),
+      }
+      const varMap = (config[`recovery_template${stage}_var_map`] ?? null) as
+        | Record<string, string>
+        | null
+
       const { data: tpl } = await db
         .from('message_templates')
         .select('body_text')
@@ -500,13 +526,18 @@ export async function runRecoveryTimers(db: any): Promise<{
         .limit(1)
         .maybeSingle()
       const placeholderCount = countPlaceholders(tpl?.body_text ?? '')
-      const params = fullParams.slice(0, placeholderCount)
+      const params = buildRecoveryParams(varMap, fields, placeholderCount)
       const renderedBody = (tpl?.body_text ?? '').replace(
         /\{\{(\d+)\}\}/g,
         (_: string, raw: string) => params[Number(raw) - 1] ?? `{{${raw}}}`,
       )
 
-      const suffix = urlButtonSuffix(checkout.abandoned_checkout_url)
+      // Button URL source — 'recovery_url' (the only source today) → Shopify's
+      // abandoned checkout URL. Mapping-driven so more sources can be added.
+      const suffix =
+        recoveryButtonSource(varMap) === 'recovery_url'
+          ? urlButtonSuffix(checkout.abandoned_checkout_url)
+          : null
 
       const { contactId, conversationId } = await ensureContactConversation(
         db,

@@ -32,8 +32,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { countPlaceholders } from '@/lib/cod/fields'
+import {
+  RECOVERY_FIELD_OPTIONS,
+  RECOVERY_URL_OPTIONS,
+  RECOVERY_DEFAULT_VAR_MAP,
+} from '@/lib/recovery/fields'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+type VarMap = Record<string, string>
 
 interface RecoveryConfig {
   recovery_enabled: boolean
@@ -50,6 +58,10 @@ interface RecoveryConfig {
   recovery_template2_name_en: string | null
   recovery_template3_name_en: string | null
   recovery_template_lang_en: string | null
+  // One variable map per reminder (shared across es/en).
+  recovery_template1_var_map: VarMap
+  recovery_template2_var_map: VarMap
+  recovery_template3_var_map: VarMap
   recovery_stop_keywords: string[]
 }
 
@@ -82,6 +94,9 @@ const DEFAULTS: RecoveryConfig = {
   recovery_template2_name_en: null,
   recovery_template3_name_en: null,
   recovery_template_lang_en: 'en_US',
+  recovery_template1_var_map: {},
+  recovery_template2_var_map: {},
+  recovery_template3_var_map: {},
   recovery_stop_keywords: ['stop', 'baja', 'parar', 'unsubscribe'],
 }
 
@@ -143,6 +158,83 @@ type EnNameKey =
   | 'recovery_template1_name_en'
   | 'recovery_template2_name_en'
   | 'recovery_template3_name_en'
+type VarMapKey =
+  | 'recovery_template1_var_map'
+  | 'recovery_template2_var_map'
+  | 'recovery_template3_var_map'
+
+// ─── Variable mapping (same pattern as the COD settings page) ─────────────────
+// One dropdown per {{n}} placeholder in the selected template's body, plus the
+// dynamic URL button, each mapped to a checkout source field. Empty selections
+// fall back to the defaults, so behavior is unchanged until the merchant edits.
+
+function RecoveryVariableMapping({
+  templates,
+  name,
+  language,
+  varMap,
+  onChange,
+}: {
+  templates: ApprovedTpl[]
+  name: string | null
+  language: string | null
+  varMap: VarMap
+  onChange: (next: VarMap) => void
+}) {
+  if (!name) return null
+  const tpl = templates.find((t) => t.name === name && t.language === language)
+  const count = tpl ? countPlaceholders(tpl.body_text ?? '') : 0
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-card/40 p-3">
+      <p className="text-xs font-medium text-foreground">Map each variable to a source:</p>
+      {Array.from({ length: count }, (_, idx) => {
+        const i = String(idx + 1)
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <code className="w-16 shrink-0 text-xs text-muted-foreground">{`{{${i}}}`}</code>
+            <Select
+              value={varMap[i] ?? RECOVERY_DEFAULT_VAR_MAP[i] ?? ''}
+              onValueChange={(v) => {
+                if (v) onChange({ ...varMap, [i]: v })
+              }}
+            >
+              <SelectTrigger className="w-full max-w-xs">
+                <SelectValue placeholder="Choose a field" />
+              </SelectTrigger>
+              <SelectContent>
+                {RECOVERY_FIELD_OPTIONS.map((o) => (
+                  <SelectItem key={o.key} value={o.key}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )
+      })}
+      <div className="flex items-center gap-2">
+        <code className="w-16 shrink-0 text-xs text-muted-foreground">Button</code>
+        <Select
+          value={varMap.button ?? RECOVERY_DEFAULT_VAR_MAP.button}
+          onValueChange={(v) => {
+            if (v) onChange({ ...varMap, button: v })
+          }}
+        >
+          <SelectTrigger className="w-full max-w-xs">
+            <SelectValue placeholder="Choose a URL source" />
+          </SelectTrigger>
+          <SelectContent>
+            {RECOVERY_URL_OPTIONS.map((o) => (
+              <SelectItem key={o.key} value={o.key}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+}
 
 function ReminderTemplateRow({
   stage,
@@ -159,6 +251,11 @@ function ReminderTemplateRow({
 }) {
   const esKey = `recovery_template${stage}_name_es` as EsNameKey
   const enKey = `recovery_template${stage}_name_en` as EnNameKey
+  const varKey = `recovery_template${stage}_var_map` as VarMapKey
+  // Placeholders are read from the Spanish template when set (the primary in
+  // an es-only store), otherwise the English one — they share semantics.
+  const mapName = config[esKey] ?? config[enKey]
+  const mapLang = config[esKey] ? config.recovery_template_lang_es : config.recovery_template_lang_en
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
       <p className="font-heading text-sm font-semibold text-foreground">{label}</p>
@@ -186,6 +283,13 @@ function ReminderTemplateRow({
           }}
         />
       </div>
+      <RecoveryVariableMapping
+        templates={templates}
+        name={mapName}
+        language={mapLang}
+        varMap={config[varKey]}
+        onChange={(next) => set(varKey, next)}
+      />
     </div>
   )
 }
@@ -344,6 +448,9 @@ export function RecoverySettings() {
           recovery_template2_name_en: c.recovery_template2_name_en ?? null,
           recovery_template3_name_en: c.recovery_template3_name_en ?? null,
           recovery_template_lang_en: c.recovery_template_lang_en ?? 'en_US',
+          recovery_template1_var_map: c.recovery_template1_var_map ?? {},
+          recovery_template2_var_map: c.recovery_template2_var_map ?? {},
+          recovery_template3_var_map: c.recovery_template3_var_map ?? {},
           recovery_stop_keywords: Array.isArray(c.recovery_stop_keywords)
             ? c.recovery_stop_keywords
             : DEFAULTS.recovery_stop_keywords,
