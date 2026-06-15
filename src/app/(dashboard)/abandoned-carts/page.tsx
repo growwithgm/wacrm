@@ -12,7 +12,67 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Search, ShoppingCart, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, ShoppingCart, ExternalLink, Loader2, PhoneOff } from 'lucide-react';
+
+type RecoveryRow = { status: string; reminders_sent: number };
+
+/**
+ * Derive the recovery indicator for a cart from its checkout_recoveries row
+ * (display-only — the engine owns the real state). "WhatsApp number missing"
+ * takes priority so email-only carts read clearly.
+ */
+function recoveryDisplay(
+  rec: RecoveryRow | undefined,
+  hasPhone: boolean,
+): { label: string; tone: 'primary' | 'warning' | 'rose' | 'muted' | 'missing' } {
+  if (!hasPhone || rec?.status === 'skipped_no_phone') {
+    return { label: 'WhatsApp number missing', tone: 'missing' };
+  }
+  if (!rec) return { label: 'No recovery yet', tone: 'muted' };
+  switch (rec.status) {
+    case 'completed_order':
+      return { label: 'Recovered', tone: 'primary' };
+    case 'opted_out':
+      return { label: 'Opted out', tone: 'rose' };
+    case 'suppressed_cooldown':
+      return { label: 'Suppressed (cooldown)', tone: 'muted' };
+    case 'active':
+    case 'done':
+      return rec.reminders_sent > 0
+        ? {
+            label: `Reminder ${rec.reminders_sent} sent`,
+            tone: rec.status === 'done' ? 'primary' : 'warning',
+          }
+        : { label: 'Recovery scheduled', tone: 'muted' };
+    default:
+      return { label: 'No recovery yet', tone: 'muted' };
+  }
+}
+
+function RecoveryBadge({ rec, hasPhone }: { rec: RecoveryRow | undefined; hasPhone: boolean }) {
+  const { label, tone } = recoveryDisplay(rec, hasPhone);
+  if (tone === 'missing') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] font-bold text-amber-600">
+        <PhoneOff className="h-3 w-3" />
+        WhatsApp number missing
+      </span>
+    );
+  }
+  const cls =
+    tone === 'primary'
+      ? 'bg-primary/10 text-primary'
+      : tone === 'warning'
+        ? 'bg-warning/10 text-warning'
+        : tone === 'rose'
+          ? 'bg-rose-500/10 text-rose-500'
+          : 'bg-muted text-muted-foreground';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-bold ${cls}`}>
+      {label}
+    </span>
+  );
+}
 
 function formatMoney(amount: number | null, currency: string | null): string {
   if (amount == null) return '—';
@@ -51,24 +111,39 @@ function itemsSummary(items: ShopifyCheckout['line_items']): string {
 
 export default function AbandonedCartsPage() {
   const [checkouts, setCheckouts] = useState<ShopifyCheckout[] | null>(null);
+  // Recovery state keyed by checkout id (shopify_checkouts.id). Display-only.
+  const [recoveries, setRecoveries] = useState<Map<string, RecoveryRow>>(new Map());
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from('shopify_checkouts')
-        .select('*')
-        .order('abandoned_at', { ascending: false })
-        .limit(200);
+      const [checkoutsRes, recRes] = await Promise.all([
+        supabase
+          .from('shopify_checkouts')
+          .select('*')
+          .order('abandoned_at', { ascending: false })
+          .limit(200),
+        supabase.from('checkout_recoveries').select('checkout_id, status, reminders_sent'),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.error('[abandoned-carts] fetch failed:', error.message);
+      if (checkoutsRes.error) {
+        console.error('[abandoned-carts] fetch failed:', checkoutsRes.error.message);
         setCheckouts([]);
         return;
       }
-      setCheckouts((data ?? []) as ShopifyCheckout[]);
+      setCheckouts((checkoutsRes.data ?? []) as ShopifyCheckout[]);
+
+      const map = new Map<string, RecoveryRow>();
+      for (const r of (recRes.data ?? []) as {
+        checkout_id: string;
+        status: string;
+        reminders_sent: number;
+      }[]) {
+        if (r.checkout_id) map.set(r.checkout_id, { status: r.status, reminders_sent: r.reminders_sent });
+      }
+      setRecoveries(map);
     })();
     return () => {
       cancelled = true;
@@ -139,6 +214,7 @@ export default function AbandonedCartsPage() {
                 <TableHead>Cart</TableHead>
                 <TableHead>Value</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Recovery</TableHead>
                 <TableHead>Abandoned</TableHead>
                 <TableHead className="text-right">Recovery link</TableHead>
               </TableRow>
@@ -172,6 +248,9 @@ export default function AbandonedCartsPage() {
                         Open
                       </span>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <RecoveryBadge rec={recoveries.get(c.id)} hasPhone={!!c.customer_phone} />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(c.abandoned_at)}

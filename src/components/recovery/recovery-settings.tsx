@@ -37,6 +37,7 @@ import {
   RECOVERY_FIELD_OPTIONS,
   RECOVERY_URL_OPTIONS,
   RECOVERY_DEFAULT_VAR_MAP,
+  varMapUsesDiscount,
 } from '@/lib/recovery/fields'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -62,7 +63,18 @@ interface RecoveryConfig {
   recovery_template1_var_map: VarMap
   recovery_template2_var_map: VarMap
   recovery_template3_var_map: VarMap
+  // Optional discount per reminder (its code fills a "Discount code" variable).
+  recovery_template1_discount_id: string | null
+  recovery_template2_discount_id: string | null
+  recovery_template3_discount_id: string | null
   recovery_stop_keywords: string[]
+}
+
+interface DiscountOption {
+  id: string
+  label: string
+  percentage: number
+  enabled: boolean
 }
 
 interface RecoveryCounts {
@@ -97,6 +109,9 @@ const DEFAULTS: RecoveryConfig = {
   recovery_template1_var_map: {},
   recovery_template2_var_map: {},
   recovery_template3_var_map: {},
+  recovery_template1_discount_id: null,
+  recovery_template2_discount_id: null,
+  recovery_template3_discount_id: null,
   recovery_stop_keywords: ['stop', 'baja', 'parar', 'unsubscribe'],
 }
 
@@ -162,6 +177,12 @@ type VarMapKey =
   | 'recovery_template1_var_map'
   | 'recovery_template2_var_map'
   | 'recovery_template3_var_map'
+type DiscountIdKey =
+  | 'recovery_template1_discount_id'
+  | 'recovery_template2_discount_id'
+  | 'recovery_template3_discount_id'
+
+const NO_DISCOUNT = '__none'
 
 // ─── Variable mapping (same pattern as the COD settings page) ─────────────────
 // One dropdown per {{n}} placeholder in the selected template's body, plus the
@@ -240,22 +261,26 @@ function ReminderTemplateRow({
   stage,
   label,
   templates,
+  discounts,
   config,
   set,
 }: {
   stage: 1 | 2 | 3
   label: string
   templates: ApprovedTpl[]
+  discounts: DiscountOption[]
   config: RecoveryConfig
   set: <K extends keyof RecoveryConfig>(key: K, value: RecoveryConfig[K]) => void
 }) {
   const esKey = `recovery_template${stage}_name_es` as EsNameKey
   const enKey = `recovery_template${stage}_name_en` as EnNameKey
   const varKey = `recovery_template${stage}_var_map` as VarMapKey
+  const discKey = `recovery_template${stage}_discount_id` as DiscountIdKey
   // Placeholders are read from the Spanish template when set (the primary in
   // an es-only store), otherwise the English one — they share semantics.
   const mapName = config[esKey] ?? config[enKey]
   const mapLang = config[esKey] ? config.recovery_template_lang_es : config.recovery_template_lang_en
+  const usesDiscount = varMapUsesDiscount(config[varKey])
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
       <p className="font-heading text-sm font-semibold text-foreground">{label}</p>
@@ -290,6 +315,47 @@ function ReminderTemplateRow({
         varMap={config[varKey]}
         onChange={(next) => set(varKey, next)}
       />
+
+      {/* Discount for this reminder. Its code fills any variable mapped to
+          "Discount code" (or the recovery-link-with-discount button). */}
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">Discount (optional)</Label>
+        <Select
+          value={config[discKey] ?? NO_DISCOUNT}
+          onValueChange={(v) => set(discKey, v === NO_DISCOUNT ? null : v)}
+        >
+          <SelectTrigger className="w-full max-w-md">
+            <SelectValue placeholder="No discount" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_DISCOUNT}>No discount</SelectItem>
+            {discounts.map((d) => (
+              <SelectItem key={d.id} value={d.id}>
+                {d.label} ({Number(d.percentage)}%){d.enabled ? '' : ' — disabled'}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {discounts.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No discounts yet — create one in{' '}
+            <Link href="/discounts" className="text-primary hover:underline">
+              Discounts
+            </Link>
+            .
+          </p>
+        )}
+        {usesDiscount && !config[discKey] && (
+          <p className="text-xs text-amber-500">
+            A variable is mapped to “Discount code” — pick a discount, or the code ships blank.
+          </p>
+        )}
+        {!usesDiscount && config[discKey] && (
+          <p className="text-xs text-muted-foreground">
+            Map a variable (or the button) to “Discount code” above to use this discount.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -388,6 +454,7 @@ export function RecoverySettings() {
     opted_out: 0,
   })
   const [templates, setTemplates] = useState<ApprovedTpl[]>([])
+  const [discounts, setDiscounts] = useState<DiscountOption[]>([])
   // Stop keywords edited as raw text (comma/newline separated) for a natural
   // editing feel; parsed to an array on save.
   const [keywordsText, setKeywordsText] = useState('')
@@ -451,12 +518,25 @@ export function RecoverySettings() {
           recovery_template1_var_map: c.recovery_template1_var_map ?? {},
           recovery_template2_var_map: c.recovery_template2_var_map ?? {},
           recovery_template3_var_map: c.recovery_template3_var_map ?? {},
+          recovery_template1_discount_id: c.recovery_template1_discount_id ?? null,
+          recovery_template2_discount_id: c.recovery_template2_discount_id ?? null,
+          recovery_template3_discount_id: c.recovery_template3_discount_id ?? null,
           recovery_stop_keywords: Array.isArray(c.recovery_stop_keywords)
             ? c.recovery_stop_keywords
             : DEFAULTS.recovery_stop_keywords,
         }
         setConfig(merged)
         setKeywordsText(merged.recovery_stop_keywords.join(', '))
+
+        // Discounts list (for the per-reminder discount picker). Best-effort —
+        // the page still works if this fails.
+        try {
+          const dres = await fetch('/api/shopify/discounts')
+          const ddata = await dres.json()
+          if (!cancelled && dres.ok) setDiscounts((ddata.discounts as DiscountOption[]) ?? [])
+        } catch {
+          /* non-fatal */
+        }
       } catch (err) {
         console.error('[recovery-settings] load failed:', err)
         if (!cancelled) toast.error('Failed to load recovery settings')
@@ -644,6 +724,7 @@ export function RecoverySettings() {
                 stage={1}
                 label="Reminder 1"
                 templates={templates}
+                discounts={discounts}
                 config={config}
                 set={set}
               />
@@ -651,6 +732,7 @@ export function RecoverySettings() {
                 stage={2}
                 label="Reminder 2"
                 templates={templates}
+                discounts={discounts}
                 config={config}
                 set={set}
               />
@@ -658,6 +740,7 @@ export function RecoverySettings() {
                 stage={3}
                 label="Reminder 3"
                 templates={templates}
+                discounts={discounts}
                 config={config}
                 set={set}
               />
