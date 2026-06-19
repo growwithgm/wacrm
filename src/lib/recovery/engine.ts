@@ -128,21 +128,14 @@ function formatTotal(
  * the path+query of Shopify's abandoned_checkout_url (never construct our
  * own link). The template's button prefix must be the storefront domain.
  */
-/**
- * The value for a Meta dynamic URL button whose template URL is `https://{{1}}`.
- *
- * We strip ONLY the scheme and pass the full `host/path?query`, so Meta renders
- * `https://<host>/<path>?<query>` = exactly the stored abandoned_checkout_url —
- * no leftover `{{1}}` and no doubled domain. Domain-agnostic, so it works for
- * every tenant's own store domain (the domain must NOT be baked into the shared
- * template, or it 404s like `https://store.com/{{1}}<path>`).
- */
-function urlButtonValue(abandonedUrl: string | null | undefined): string | null {
+function urlButtonSuffix(abandonedUrl: string | null | undefined): string | null {
   if (!abandonedUrl) return null
-  const trimmed = abandonedUrl.trim()
-  if (!trimmed) return null
-  // The template button supplies the `https://`; we provide everything after it.
-  return trimmed.replace(/^https?:\/\//i, '')
+  try {
+    const u = new URL(abandonedUrl)
+    return `${u.pathname.replace(/^\//, '')}${u.search}`
+  } catch {
+    return null
+  }
 }
 
 function isSpanishLocale(locale: string | null | undefined): boolean {
@@ -590,16 +583,15 @@ export async function runRecoveryTimers(db: any): Promise<{
         (_: string, raw: string) => params[Number(raw) - 1] ?? `{{${raw}}}`,
       )
 
-      // Button URL value (for a `https://{{1}}` dynamic-URL template button).
-      // 'recovery_url' → the full Shopify abandoned-checkout link minus scheme;
-      // 'recovery_url_with_discount' appends the generated code so the link
-      // pre-applies the discount. Mapping-driven.
+      // Button URL source. 'recovery_url' → Shopify's abandoned checkout URL;
+      // 'recovery_url_with_discount' appends the generated code (if any) so the
+      // link pre-applies the discount. Mapping-driven.
       const buttonSource = recoveryButtonSource(varMap)
-      let urlValue: string | null = null
+      let suffix: string | null = null
       if (buttonSource === 'recovery_url' || buttonSource === 'recovery_url_with_discount') {
-        urlValue = urlButtonValue(checkout.abandoned_checkout_url)
-        if (buttonSource === 'recovery_url_with_discount' && urlValue && fields.discount_code) {
-          urlValue += (urlValue.includes('?') ? '&' : '?') + 'discount=' + encodeURIComponent(fields.discount_code)
+        suffix = urlButtonSuffix(checkout.abandoned_checkout_url)
+        if (buttonSource === 'recovery_url_with_discount' && suffix && fields.discount_code) {
+          suffix += (suffix.includes('?') ? '&' : '?') + 'discount=' + encodeURIComponent(fields.discount_code)
         }
       }
 
@@ -612,7 +604,7 @@ export async function runRecoveryTimers(db: any): Promise<{
         templateName,
         templateLang,
         params,
-        urlValue,
+        suffix,
         renderedBody,
       )
 
