@@ -167,28 +167,36 @@ export async function ensureCheckoutRecovery(
   checkout: RestCheckout,
 ): Promise<void> {
   try {
-    const { data: config } = await db
-      .from('shopify_config')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!config?.recovery_enabled) return
+    // BUG-2 GUARD: a malformed payload without a real id must never create a
+    // tracking row keyed on the literal string "undefined".
+    const rawId = checkout?.id
+    if (rawId == null || String(rawId).trim() === '' || String(rawId) === 'undefined') {
+      console.warn('[recovery] checkout payload has no usable id — skipping recovery row')
+      return
+    }
+    const shopifyCheckoutId = String(rawId)
 
-    const shopifyCheckoutId = String(checkout.id)
-
+    // The persisted shopify_checkouts row is the source of truth for the
+    // tracking row's linkage — we read its real uuid (the checkout_id FK) and
+    // its stored shopify_checkout_id rather than re-deriving from the payload,
+    // so the recovery row can never inherit a bad "undefined" id.
     const { data: row } = await db
       .from('shopify_checkouts')
-      .select('id, customer_phone, completed_at, recovered')
+      .select('id, shopify_checkout_id, customer_phone, completed_at, recovered')
       .eq('user_id', userId)
       .eq('shopify_checkout_id', shopifyCheckoutId)
       .maybeSingle()
     if (!row) return
+    if (!row.id || !row.shopify_checkout_id || row.shopify_checkout_id === 'undefined') {
+      console.warn('[recovery] persisted checkout id is invalid — skipping', shopifyCheckoutId)
+      return
+    }
 
     const { data: existing } = await db
       .from('checkout_recoveries')
       .select('id, status, phone')
       .eq('user_id', userId)
-      .eq('shopify_checkout_id', shopifyCheckoutId)
+      .eq('shopify_checkout_id', row.shopify_checkout_id)
       .maybeSingle()
 
     // GUARD 1 (order complete) at intake: a checkouts/update that carries
@@ -199,7 +207,7 @@ export async function ensureCheckoutRecovery(
           .from('checkout_recoveries')
           .update({ status: 'completed_order' })
           .eq('id', existing.id)
-        console.log('[recovery] checkout completed — sequence stopped', shopifyCheckoutId)
+        console.log('[recovery] checkout completed — sequence stopped', row.shopify_checkout_id)
       }
       return
     }
@@ -209,14 +217,13 @@ export async function ensureCheckoutRecovery(
     if (existing) {
       // checkouts/update often arrives as the customer fills in their
       // details — if we skipped for a missing phone and one is now
-      // present, activate the sequence (timer anchor stays at the
-      // original created_at).
+      // present, activate the sequence (timer anchor stays at created_at).
       if (existing.status === 'skipped_no_phone' && phone) {
         await db
           .from('checkout_recoveries')
           .update({ status: 'active', phone })
           .eq('id', existing.id)
-        console.log('[recovery] phone arrived — sequence activated', shopifyCheckoutId)
+        console.log('[recovery] phone arrived — sequence activated', row.shopify_checkout_id)
       }
       return // GUARD 3: one sequence per checkout, never restarted
     }
@@ -226,38 +233,49 @@ export async function ensureCheckoutRecovery(
       await db.from('checkout_recoveries').insert({
         user_id: userId,
         checkout_id: row.id,
-        shopify_checkout_id: shopifyCheckoutId,
+        shopify_checkout_id: row.shopify_checkout_id,
+        reminders_sent: 0,
         status: 'skipped_no_phone',
       })
       return
     }
 
-    // GUARD 3 (anti-spam cooldown): if this phone already received at
-    // least one recovery reminder within the cooldown window, suppress.
-    const cooldownDays = config.recovery_cooldown_days ?? DEFAULT_COOLDOWN_DAYS
-    const since = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000).toISOString()
+    // GUARD 3 (anti-spam cooldown): if this phone already received at least one
+    // recovery reminder within the cooldown window, suppress a new sequence.
+    const { data: cfg } = await db
+      .from('shopify_config')
+      .select('recovery_cooldown_days')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const cooldownDays = cfg?.recovery_cooldown_days ?? DEFAULT_COOLDOWN_DAYS
+    const sinceIso = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000).toISOString()
     const { data: recent } = await db
       .from('checkout_recoveries')
       .select('phone, reminders_sent')
       .eq('user_id', userId)
-      .gte('created_at', since)
+      .gte('created_at', sinceIso)
       .gte('reminders_sent', 1)
     const inCooldown = (recent ?? []).some(
       (r: { phone: string | null }) => !!r.phone && phonesMatch(r.phone, phone),
     )
 
+    // BUG-1 FIX: row creation is intentionally DECOUPLED from recovery_enabled.
+    // The tracking row is always recorded so the cart is visible and ready;
+    // runRecoveryTimers independently gates actual SENDING on recovery_enabled,
+    // so nothing is messaged until the merchant turns recovery on.
     await db.from('checkout_recoveries').insert({
       user_id: userId,
       checkout_id: row.id,
-      shopify_checkout_id: shopifyCheckoutId,
+      shopify_checkout_id: row.shopify_checkout_id,
       phone,
+      reminders_sent: 0,
       status: inCooldown ? 'suppressed_cooldown' : 'active',
     })
     console.log(
       inCooldown
         ? '[recovery] sequence suppressed (cooldown)'
         : '[recovery] sequence started',
-      shopifyCheckoutId,
+      row.shopify_checkout_id,
     )
   } catch (err) {
     // Best-effort: a recovery bookkeeping failure must never break the
