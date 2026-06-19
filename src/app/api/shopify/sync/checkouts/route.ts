@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidToken, shopifyRest } from '@/lib/shopify/client'
 import { upsertCheckout } from '@/lib/shopify/store'
+import { ensureCheckoutRecovery } from '@/lib/recovery/engine'
 import type { ShopifyConfigRow } from '@/lib/shopify/client'
 import type { RestCheckout } from '@/lib/shopify/transform'
 
@@ -92,6 +93,9 @@ export async function POST(request: Request) {
       try {
         // 'backfill' source — display only, never automation-eligible.
         await upsertCheckout(db(), user.id, config.store_domain, checkout, 'backfill')
+        // Also create the recovery tracking row for sync-ingested carts.
+        // Idempotent; sending stays gated by the cron's recovery_enabled check.
+        await ensureCheckoutRecovery(db(), user.id, checkout)
       } catch (err) {
         console.error('[shopify/sync/checkouts] upsert error:', err)
         errors++

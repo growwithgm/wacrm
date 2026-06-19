@@ -17,21 +17,28 @@ import { Search, ShoppingCart, ExternalLink, Loader2, PhoneOff } from 'lucide-re
 type RecoveryRow = { status: string; reminders_sent: number };
 
 /**
- * Derive the recovery indicator for a cart from its checkout_recoveries row
- * (display-only — the engine owns the real state). "WhatsApp number missing"
- * takes priority so email-only carts read clearly.
+ * Derive the recovery indicator for a cart. The "Recovered" state is keyed
+ * STRICTLY off the checkout's own truth (recovered === true OR completed_at
+ * set) — never off the checkout_recoveries row — so a stale or mislinked
+ * recovery row can never paint a false green "Recovered" badge.
  */
 function recoveryDisplay(
   rec: RecoveryRow | undefined,
-  hasPhone: boolean,
+  opts: { hasPhone: boolean; recovered: boolean; completedAt: string | null },
 ): { label: string; tone: 'primary' | 'warning' | 'rose' | 'muted' | 'missing' } {
-  if (!hasPhone || rec?.status === 'skipped_no_phone') {
+  // Authoritative: the checkout itself converted to an order.
+  if (opts.recovered || opts.completedAt) {
+    return { label: 'Recovered', tone: 'primary' };
+  }
+  if (!opts.hasPhone || rec?.status === 'skipped_no_phone') {
     return { label: 'WhatsApp number missing', tone: 'missing' };
   }
   if (!rec) return { label: 'No recovery yet', tone: 'muted' };
   switch (rec.status) {
     case 'completed_order':
-      return { label: 'Recovered', tone: 'primary' };
+      // Recovery row claims completed but the checkout above says it is NOT
+      // recovered — trust the checkout and never show a false "Recovered".
+      return { label: 'No recovery yet', tone: 'muted' };
     case 'opted_out':
       return { label: 'Opted out', tone: 'rose' };
     case 'suppressed_cooldown':
@@ -49,8 +56,18 @@ function recoveryDisplay(
   }
 }
 
-function RecoveryBadge({ rec, hasPhone }: { rec: RecoveryRow | undefined; hasPhone: boolean }) {
-  const { label, tone } = recoveryDisplay(rec, hasPhone);
+function RecoveryBadge({
+  rec,
+  hasPhone,
+  recovered,
+  completedAt,
+}: {
+  rec: RecoveryRow | undefined;
+  hasPhone: boolean;
+  recovered: boolean;
+  completedAt: string | null;
+}) {
+  const { label, tone } = recoveryDisplay(rec, { hasPhone, recovered, completedAt });
   if (tone === 'missing') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12px] font-bold text-amber-600">
@@ -239,7 +256,7 @@ export default function AbandonedCartsPage() {
                     {formatMoney(c.total_price, c.currency)}
                   </TableCell>
                   <TableCell>
-                    {c.recovered ? (
+                    {c.recovered || c.completed_at ? (
                       <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-[12px] font-bold text-primary">
                         Recovered
                       </span>
@@ -250,7 +267,12 @@ export default function AbandonedCartsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <RecoveryBadge rec={recoveries.get(c.id)} hasPhone={!!c.customer_phone} />
+                    <RecoveryBadge
+                      rec={recoveries.get(c.id)}
+                      hasPhone={!!c.customer_phone}
+                      recovered={!!c.recovered}
+                      completedAt={c.completed_at ?? null}
+                    />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(c.abandoned_at)}

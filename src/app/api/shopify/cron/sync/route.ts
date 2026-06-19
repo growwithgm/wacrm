@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidToken, shopifyRest } from '@/lib/shopify/client'
 import { upsertOrder, upsertCheckout } from '@/lib/shopify/store'
 import { runCodTimers } from '@/lib/cod/engine'
-import { runRecoveryTimers } from '@/lib/recovery/engine'
+import { runRecoveryTimers, ensureCheckoutRecovery } from '@/lib/recovery/engine'
 import type { ShopifyConfigRow } from '@/lib/shopify/client'
 import type { RestOrder, RestCheckout } from '@/lib/shopify/transform'
 
@@ -75,6 +75,9 @@ async function syncStore(admin: any, config: ShopifyConfigRow) {
     for (const checkout of res.data.checkouts ?? []) {
       try {
         await upsertCheckout(admin, config.user_id, config.store_domain, checkout, 'backfill')
+        // Create the recovery tracking row for sync-ingested carts too — not
+        // only the live webhook. Idempotent; sending is still gated by the cron.
+        await ensureCheckoutRecovery(admin, config.user_id, checkout)
         checkouts++
       } catch (err) {
         console.error('[shopify/cron] checkout upsert error:', err)
