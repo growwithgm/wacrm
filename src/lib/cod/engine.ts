@@ -368,18 +368,35 @@ async function sendCodTemplate(
     console.log('[cod] auto-corrected contact phone', { from: sanitized, to: workingPhone })
   }
 
+  // Render the body for the inbox (mirrors the recovery engine): pull the synced
+  // template's body_text and fill {{n}} with the params we already sent to Meta,
+  // so the conversation shows the real message instead of a bare "Template".
+  const { data: tpl } = await db
+    .from('message_templates')
+    .select('body_text')
+    .eq('user_id', userId)
+    .eq('name', effectiveName)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const renderedBody = (tpl?.body_text ?? '').replace(
+    /\{\{(\d+)\}\}/g,
+    (_: string, raw: string) => params[Number(raw) - 1] ?? `{{${raw}}}`,
+  )
+
   await db.from('messages').insert({
     conversation_id: conversationId,
     sender_type: 'bot',
     content_type: 'template',
     template_name: effectiveName,
+    content_text: renderedBody || null,
     message_id: result.messageId,
     status: 'sent',
   })
   await db
     .from('conversations')
     .update({
-      last_message_text: `[COD] ${effectiveName}`,
+      last_message_text: renderedBody || `[COD] ${effectiveName}`,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
