@@ -12,10 +12,13 @@ export const runtime = 'nodejs'
 // Multi-store sync can take a while; allow more than the default (Pro plan).
 export const maxDuration = 60
 
-// Look back a couple of days so a webhook outage of up to ~48h still gets
-// reconciled. Bounded page count keeps each run within the time budget.
-const LOOKBACK_DAYS = 2
-const MAX_PAGES = 4
+// This cron is a backfill SAFETY NET that runs every ~15 min — webhooks are the
+// real-time path. A 12h window still reconciles a webhook outage of up to ~12h
+// (48× the run cadence) while keeping each run well under cron-job.org's 30s
+// timeout. Longer gaps are covered by the manual 30-day Sync buttons. The
+// bounded page count caps the per-run row count on traffic spikes.
+const LOOKBACK_HOURS = 12
+const MAX_PAGES = 2
 const PAGE_SIZE = 50
 
 function safeEq(a: string, b: string): boolean {
@@ -41,7 +44,7 @@ function authorized(request: Request): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function syncStore(admin: any, config: ShopifyConfigRow) {
   const token = await getValidToken(config)
-  const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
   let orders = 0
   let checkouts = 0
 
