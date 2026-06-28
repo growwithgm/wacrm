@@ -82,6 +82,31 @@ Key pages:
 - [Architecture](https://wacrm.tech/docs/architecture)
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
 
+## Machine-callable outbound API
+
+`POST /api/outbound/send` lets a trusted internal service (e.g. an external
+CRM's "Send WhatsApp" action) send a message *through* Wasify so the thread is
+logged in the inbox like any other. Unlike `/api/whatsapp/send` (cookie session
++ existing `conversation_id`), it authenticates with a bearer token and takes a
+raw phone number, finding-or-creating the contact + conversation automatically.
+
+Environment variables:
+- `WACRM_API_TOKEN` (required) — bearer token callers must present as
+  `Authorization: Bearer <token>`. Leave unset to disable the endpoint (503).
+- `WACRM_SEND_USER_ID` (optional) — owner account the sends are attributed to.
+  If unset, the single connected `whatsapp_config` is used (single-tenant).
+
+```bash
+curl -X POST https://<host>/api/outbound/send \
+  -H "Authorization: Bearer $WACRM_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"+34600000000","message":"Hello from the CRM"}'
+# or a pre-approved template:
+#   {"to":"+34600000000","template":"name","variables":["a"],"language":"es"}
+```
+
+The Meta access token is never returned or logged.
+
 ## Stack
 
 - **App** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4.
