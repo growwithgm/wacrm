@@ -2,6 +2,21 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // MCP endpoint: edge backstop. Kill-switch + a coarse bearer-presence check
+  // so a forgotten handler guard can never leave /api/mcp open. The
+  // authoritative constant-time token check runs in the route handler. Return
+  // early to skip the Supabase session work for machine (non-cookie) callers.
+  if (request.nextUrl.pathname.startsWith('/api/mcp')) {
+    if (process.env.MCP_ENABLED !== 'true') {
+      return NextResponse.json({ error: 'mcp_disabled' }, { status: 503 })
+    }
+    const authz = request.headers.get('authorization')
+    if (!authz || !authz.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    }
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
