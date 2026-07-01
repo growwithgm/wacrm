@@ -1,5 +1,6 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { mcpBearerConfigured, mcpEnabled, verifyMcpBearer } from '@/lib/mcp/auth'
+import { registerReadTools } from '@/lib/mcp/tools/read'
 
 // Node runtime (needs crypto + service-role Supabase later); 60s ceiling.
 export const runtime = 'nodejs'
@@ -8,9 +9,8 @@ export const maxDuration = 60
 // ---------------------------------------------------------------------------
 // Wasify MCP endpoint — Streamable HTTP at /api/mcp/mcp (SSE disabled).
 //
-// STAGE 1: ZERO tools are registered. This ships the transport + auth +
-// kill-switch ONLY, so 503 (disabled) / 401 (bad token) / 200 (initialize)
-// can be verified in production before any read/send tool exists.
+// STAGE 2: read-only tools are registered (see tools/read.ts). No send/write
+// tool exists yet (that is Stage 3). Auth + kill-switch below are unchanged.
 //
 // Order of gates on every request:
 //   1. MCP_ENABLED !== 'true'          -> 503 (kill-switch, fail-closed)
@@ -28,10 +28,10 @@ function jsonError(status: number, error: string): Response {
 }
 
 const mcpHandler = createMcpHandler(
-  () => {
-    // Stage 1: no tools registered yet.
+  (server) => {
+    registerReadTools(server)
   },
-  { serverInfo: { name: 'wasify-mcp', version: '0.1.0' } },
+  { serverInfo: { name: 'wasify-mcp', version: '0.2.0' } },
   { basePath: '/api/mcp', disableSse: true, maxDuration: 60 },
 )
 
