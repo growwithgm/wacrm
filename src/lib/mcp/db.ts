@@ -497,6 +497,26 @@ export async function getDashboardMetrics(): Promise<Row> {
   }
 }
 
+// --- Send config (Stage 3, server-only) ------------------------------------
+
+/**
+ * Fetch the owner's WhatsApp send credentials (phone_number_id + ENCRYPTED
+ * access_token). This is the DELIBERATE exception to the read allowlists: it
+ * returns the encrypted token ONLY so the send tool can decrypt it server-side
+ * and call Meta. The token is NEVER returned to the model / any tool response.
+ * Owner-scoped like everything else.
+ */
+export async function getOwnerSendConfig(): Promise<{ phone_number_id: string; access_token: string } | null> {
+  const { data, error } = await db()
+    .from('whatsapp_config')
+    .select('phone_number_id, access_token')
+    .eq('user_id', ownerUserId())
+    .maybeSingle()
+  if (error) fail(error.message)
+  if (!data?.phone_number_id || !data?.access_token) return null
+  return { phone_number_id: data.phone_number_id as string, access_token: data.access_token as string }
+}
+
 // --- Audit sink (durable; backs Stage 3's daily send cap) ------------------
 
 export async function insertAuditRow(row: {

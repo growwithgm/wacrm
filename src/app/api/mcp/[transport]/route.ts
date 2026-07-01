@@ -1,6 +1,7 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { mcpBearerConfigured, mcpEnabled, verifyMcpBearer } from '@/lib/mcp/auth'
 import { registerReadTools } from '@/lib/mcp/tools/read'
+import { registerSendTestTool } from '@/lib/mcp/tools/send-test'
 
 // Node runtime (needs crypto + service-role Supabase later); 60s ceiling.
 export const runtime = 'nodejs'
@@ -9,8 +10,10 @@ export const maxDuration = 60
 // ---------------------------------------------------------------------------
 // Wasify MCP endpoint — Streamable HTTP at /api/mcp/mcp (SSE disabled).
 //
-// STAGE 2: read-only tools are registered (see tools/read.ts). No send/write
-// tool exists yet (that is Stage 3). Auth + kill-switch below are unchanged.
+// STAGE 3: read-only tools (tools/read.ts) + the single guarded send tool
+// (tools/send-test.ts). send_test_message can ONLY message the hardcoded owner
+// test number (+34632189061), defaults to a dry run, and is daily-capped. Auth
+// + kill-switch below are unchanged.
 //
 // Order of gates on every request:
 //   1. MCP_ENABLED !== 'true'          -> 503 (kill-switch, fail-closed)
@@ -30,8 +33,9 @@ function jsonError(status: number, error: string): Response {
 const mcpHandler = createMcpHandler(
   (server) => {
     registerReadTools(server)
+    registerSendTestTool(server)
   },
-  { serverInfo: { name: 'wasify-mcp', version: '0.2.0' } },
+  { serverInfo: { name: 'wasify-mcp', version: '0.3.0' } },
   { basePath: '/api/mcp', disableSse: true, maxDuration: 60 },
 )
 
