@@ -55,6 +55,20 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   /**
+   * OAuth discovery lives at the root `/.well-known/*` paths (RFC 8414 / 9728),
+   * but the handlers live under /api/mcp/oauth/. Rewrite the well-known paths to
+   * them. The `:path*` variants cover clients that append the resource path
+   * (e.g. /.well-known/oauth-protected-resource/api/mcp/mcp).
+   */
+  async rewrites() {
+    return [
+      { source: '/.well-known/oauth-authorization-server', destination: '/api/mcp/oauth/authorization-server-metadata' },
+      { source: '/.well-known/oauth-authorization-server/:path*', destination: '/api/mcp/oauth/authorization-server-metadata' },
+      { source: '/.well-known/oauth-protected-resource', destination: '/api/mcp/oauth/protected-resource-metadata' },
+      { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/mcp/oauth/protected-resource-metadata' },
+    ]
+  },
+  /**
    * Cache-Control policy.
    *
    * Why this exists:

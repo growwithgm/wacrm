@@ -517,6 +517,92 @@ export async function getOwnerSendConfig(): Promise<{ phone_number_id: string; a
   return { phone_number_id: data.phone_number_id as string, access_token: data.access_token as string }
 }
 
+// --- OAuth server state (Phase 4, server-only; no owner scoping — these are
+//     global auth-flow records, not tenant data; no PII) ----------------------
+
+export async function saveOAuthClient(c: {
+  client_id: string
+  client_name: string
+  redirect_uris: string[]
+}): Promise<void> {
+  const { error } = await db().from('mcp_oauth_clients').insert({
+    client_id: c.client_id,
+    client_name: c.client_name,
+    redirect_uris: c.redirect_uris,
+  })
+  if (error) fail(error.message)
+}
+
+export async function getOAuthClient(
+  clientId: string,
+): Promise<{ client_id: string; client_name: string; redirect_uris: string[] } | null> {
+  const { data, error } = await db()
+    .from('mcp_oauth_clients')
+    .select('client_id, client_name, redirect_uris')
+    .eq('client_id', clientId)
+    .maybeSingle()
+  if (error) fail(error.message)
+  if (!data) return null
+  return {
+    client_id: data.client_id as string,
+    client_name: (data.client_name as string) ?? 'unknown client',
+    redirect_uris: (data.redirect_uris as string[]) ?? [],
+  }
+}
+
+export async function saveOAuthCode(c: {
+  code_hash: string
+  client_id: string
+  redirect_uri: string
+  code_challenge: string
+  code_challenge_method: string
+  scope: string
+  expires_at: string
+}): Promise<void> {
+  const { error } = await db().from('mcp_oauth_codes').insert({
+    code_hash: c.code_hash,
+    client_id: c.client_id,
+    redirect_uri: c.redirect_uri,
+    code_challenge: c.code_challenge,
+    code_challenge_method: c.code_challenge_method,
+    scope: c.scope,
+    expires_at: c.expires_at,
+  })
+  if (error) fail(error.message)
+}
+
+/**
+ * Atomically consume an auth code: mark used only if currently unused, and
+ * return the row. Returns null if the code is unknown, already used, or
+ * expired — giving one-time-use + replay protection.
+ */
+export async function consumeOAuthCode(codeHash: string): Promise<{
+  client_id: string
+  redirect_uri: string
+  code_challenge: string
+  scope: string
+  expires_at: string
+} | null> {
+  const nowIso = new Date().toISOString()
+  const { data, error } = await db()
+    .from('mcp_oauth_codes')
+    .update({ used_at: nowIso })
+    .eq('code_hash', codeHash)
+    .is('used_at', null)
+    .gt('expires_at', nowIso)
+    .select('client_id, redirect_uri, code_challenge, scope, expires_at')
+    .maybeSingle()
+  if (error) fail(error.message)
+  if (!data) return null
+  return {
+    client_id: data.client_id as string,
+    redirect_uri: data.redirect_uri as string,
+    code_challenge: data.code_challenge as string,
+    scope: (data.scope as string) ?? 'mcp',
+    expires_at: data.expires_at as string,
+  }
+}
+
 // --- Audit sink (durable; backs Stage 3's daily send cap) ------------------
 
 export async function insertAuditRow(row: {
